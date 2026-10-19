@@ -21,12 +21,17 @@ public class GatewayRoutesConfig {
 
     @Bean
     public RouteLocator routes(RouteLocatorBuilder builder,
-                               @Value("${services.user-service.url}") String userServiceUrl) {
+                               @Value("${services.user-service.url}") String userServiceUrl,
+                               @Value("${services.product-service.url}") String productServiceUrl) {
         return builder.routes()
                 .route("user-service", route -> route
                         .path("/api/v1/auth/**", "/api/v1/users/**", "/api/v1/admin/**")
                         .filters(filter -> filter.dedupeResponseHeader(CORS_RESPONSE_HEADERS, "RETAIN_FIRST"))
                         .uri(userServiceUrl))
+                .route("product-service", route -> route
+                        .path("/api/v1/products/**", "/api/v1/categories/**")
+                        .filters(filter -> filter.dedupeResponseHeader(CORS_RESPONSE_HEADERS, "RETAIN_FIRST"))
+                        .uri(productServiceUrl))
                 .build();
     }
 }

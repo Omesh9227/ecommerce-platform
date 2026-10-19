@@ -5,13 +5,15 @@ Docker/Docker Compose is added only after all services work locally.
 
 ## Services
 
-| Service       | Port | Database             | Status                 |
-|---------------|------|----------------------|------------------------|
-| api-gateway   | 8080 | —                    | Phase 1 — complete     |
-| user-service  | 8081 | `ecommerce_user_db`  | Phase 1 — complete     |
+| Service         | Port | Database               | Status             |
+|-----------------|------|------------------------|--------------------|
+| api-gateway     | 8080 | —                      | Phase 1 — complete |
+| user-service    | 8081 | `ecommerce_user_db`    | Phase 1 — complete |
+| product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL → user-service → api-gateway.
+Start order: PostgreSQL → user-service → product-service → api-gateway.
+Each service has its own README with APIs, run/test steps and a Postman collection.
 
 ## Local prerequisites
 

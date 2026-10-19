@@ -32,6 +32,8 @@ class GatewayRoutingTest {
     static void downstreamUrl(DynamicPropertyRegistry registry) throws IOException {
         downstream = StubDownstreamServer.start();
         registry.add("services.user-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        // The same stub stands in for product-service; it echoes the path, so tests can tell which route was used
+        registry.add("services.product-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -216,6 +218,81 @@ class GatewayRoutingTest {
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
                 .exchange()
                 .expectStatus().value(Matchers.oneOf(400, 403));
+    }
+
+    // ---------- Product catalog (product-service) ----------
+
+    @Test
+    void browsingProducts_isPublic() {
+        webTestClient.get().uri("/api/v1/products?search=iphone")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/products")
+                .jsonPath("$.userId").doesNotExist();
+    }
+
+    @Test
+    void browsingCategories_isPublic() {
+        webTestClient.get().uri("/api/v1/categories")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.path").isEqualTo("/api/v1/categories");
+    }
+
+    @Test
+    void browsingProducts_withToken_forwardsAuthorizationForTheService() {
+        webTestClient.get().uri("/api/v1/products")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.authorizationPresent").isEqualTo(true)
+                // Public path: identity headers are not added (the service validates the token itself)
+                .jsonPath("$.role").doesNotExist();
+    }
+
+    @Test
+    void creatingProduct_withoutToken_returns401() {
+        webTestClient.post().uri("/api/v1/products")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.message").isEqualTo("Authentication is required to access this resource");
+    }
+
+    @Test
+    void creatingProduct_asCustomer_returns403() {
+        webTestClient.post().uri("/api/v1/products")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void deletingCategory_asCustomer_returns403() {
+        webTestClient.delete().uri("/api/v1/categories/" + UUID.randomUUID())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void creatingProduct_asAdmin_isForwardedToProductService() {
+        webTestClient.post().uri("/api/v1/products")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/products")
+                .jsonPath("$.method").isEqualTo("POST")
+                .jsonPath("$.role").isEqualTo("ADMIN")
+                .jsonPath("$.userId").isEqualTo(adminId.toString());
     }
 
     // ---------- Routing / errors ----------

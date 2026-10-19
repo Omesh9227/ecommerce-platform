@@ -12,6 +12,7 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
@@ -26,9 +27,10 @@ import java.util.Locale;
  * Runs for every routed request, before it is forwarded:
  *
  * 1. Rejects path tricks ("..", "//", encoded dots) that could bypass the path rules.
- * 2. Public paths (register, login) pass through without a token.
+ * 2. Public paths (register, login) and public GET paths (browsing products/categories) pass through
+ *    without a token.
  * 3. Everything else needs a valid Bearer token → otherwise 401.
- * 4. Admin paths also need role ADMIN → otherwise 403.
+ * 4. Admin paths (any method) and admin-write paths (anything except GET/HEAD) also need role ADMIN → 403.
  * 5. Forwards the request with trusted identity headers (X-User-Id, X-User-Email, X-User-Role).
  *    Client-supplied copies of these headers are always removed first, so they can't be spoofed.
  *
@@ -67,7 +69,12 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return errorResponseWriter.write(exchange, HttpStatus.BAD_REQUEST, "Invalid request path");
         }
 
-        if (matchesAny(securityProperties.publicPaths(), path)) {
+        boolean readOnly = isReadOnly(request.getMethod());
+
+        if (matchesAny(securityProperties.publicPaths(), path)
+                || (readOnly && matchesAny(securityProperties.publicGetPaths(), path))) {
+            // The Authorization header (if any) is still forwarded: the service decides what an
+            // optional login changes (e.g. admins also see inactive products).
             return chain.filter(withIdentity(exchange, null, null, null));
         }
 
@@ -94,7 +101,9 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return errorResponseWriter.write(exchange, HttpStatus.UNAUTHORIZED, MSG_INVALID_TOKEN);
         }
 
-        if (matchesAny(securityProperties.adminPaths(), path) && !ADMIN_ROLE.equals(role)) {
+        boolean adminOnly = matchesAny(securityProperties.adminPaths(), path)
+                || (!readOnly && matchesAny(securityProperties.adminWritePaths(), path));
+        if (adminOnly && !ADMIN_ROLE.equals(role)) {
             log.debug("User {} with role {} denied access to {}", userId, role, path);
             return errorResponseWriter.write(exchange, HttpStatus.FORBIDDEN, MSG_FORBIDDEN);
         }
@@ -117,6 +126,10 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
                 })
                 .build();
         return exchange.mutate().request(mutated).build();
+    }
+
+    private static boolean isReadOnly(HttpMethod method) {
+        return HttpMethod.GET.equals(method) || HttpMethod.HEAD.equals(method);
     }
 
     private boolean matchesAny(List<String> patterns, String path) {
