@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{baseUrl}}/api/v1/auth/register"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "firstName": "Omesh",
+      "lastName": "Kumar",
+      "email": "{{customerEmail}}",
+      "phoneNumber": "9876543210",
+      "password": "{{customerPassword}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      pm.collectionVariables.set('customerId', pm.response.json().data.userId);
+    language: text/javascript
+order: 1000

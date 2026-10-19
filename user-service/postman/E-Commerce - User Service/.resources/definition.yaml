@@ -1,0 +1,13 @@
+$kind: collection
+description: |-
+  Run top to bottom. Login requests store tokens in collection variables automatically.
+  Set adminEmail/adminPassword to the ADMIN_EMAIL/ADMIN_PASSWORD you started the service with.
+variables:
+  baseUrl: http://localhost:8081
+  customerEmail: omesh@example.com
+  customerPassword: Password@123
+  adminEmail: admin@ecommerce.com
+  adminPassword: Admin@12345
+  customerToken: ""
+  adminToken: ""
+  customerId: ""

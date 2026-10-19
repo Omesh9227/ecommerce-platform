@@ -1,0 +1,27 @@
+# Build output
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Local secrets / env files — never commit credentials
+.env
+*.env
+!.env.example
+application-local.yml
+application-local.properties
+
+# Postman local workspace files
+.postman/
+/postman/
