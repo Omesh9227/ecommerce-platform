@@ -8,6 +8,7 @@ import com.ecommerce.productservice.entity.Product;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /** Entity → DTO. Must be called inside a transaction (category and images are lazy). */
@@ -33,6 +34,8 @@ public class ProductMapper {
                 product.getStatus(),
                 product.getAvailableQuantity(),
                 product.getAvailableQuantity() > 0,
+                product.getAverageRating() == null ? BigDecimal.ZERO.setScale(1) : product.getAverageRating(),
+                product.getReviewCount(),
                 List.copyOf(product.getImageUrls()),
                 product.getCreatedAt(),
                 product.getUpdatedAt()

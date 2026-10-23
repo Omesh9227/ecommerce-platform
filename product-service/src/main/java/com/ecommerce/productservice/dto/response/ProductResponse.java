@@ -21,6 +21,8 @@ public record ProductResponse(
         ProductStatus status,
         int availableQuantity,
         boolean inStock,
+        BigDecimal averageRating,
+        int reviewCount,
         List<String> imageUrls,
         Instant createdAt,
         Instant updatedAt

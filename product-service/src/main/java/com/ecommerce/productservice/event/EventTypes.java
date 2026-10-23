@@ -15,6 +15,9 @@ public final class EventTypes {
     public static final String INVENTORY_UPDATED = "INVENTORY_UPDATED";
     public static final String INVENTORY_LOW = "INVENTORY_LOW";
 
+    // Published by review-service on the review-events topic
+    public static final String PRODUCT_RATING_UPDATED = "PRODUCT_RATING_UPDATED";
+
     private EventTypes() {
     }
 }
