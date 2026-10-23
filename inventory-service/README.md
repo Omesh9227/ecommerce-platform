@@ -32,7 +32,7 @@ reserve ──► RESERVED ──confirm──► CONFIRMED   (sale: on-hand and
                     └──release──► RELEASED    (cancelled: reserved goes down, stock is available again)
 ```
 
-## APIs (all ADMIN; order-service will call the reservation endpoints in a later phase)
+## APIs (ADMIN; the reservation endpoints also accept order-service's own token, role `SERVICE`)
 
 | Method | Path                                                  | Notes                                                       |
 |--------|-------------------------------------------------------|-------------------------------------------------------------|
