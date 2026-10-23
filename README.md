@@ -11,9 +11,10 @@ Docker/Docker Compose is added only after all services work locally.
 | user-service    | 8081 | `ecommerce_user_db`    | Phase 1 — complete |
 | product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete; Kafka events in Phase 3 |
 | inventory-service | 8083 | `ecommerce_inventory_db` | Phase 3 — complete |
+| cart-service    | 8084 | Redis (`cart:{userId}`) | Phase 4 — complete |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka → user-service → product-service → inventory-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis → user-service → product-service → inventory-service → cart-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
 ## Local prerequisites
@@ -22,6 +23,7 @@ Each service has its own README with APIs, run/test steps and a Postman collecti
 - Maven 3.9+ (`brew install maven`) or IntelliJ's bundled Maven
 - PostgreSQL on `localhost:5432` (pgAdmin for inspecting data)
 - Kafka on `localhost:9092` (below)
+- Redis on `localhost:6379` (below)
 - Postman
 
 ## Kafka (local, no Docker)
@@ -49,6 +51,20 @@ messages that could not be processed. If Kafka is stopped, the services keep wor
 service's `outbox_events` table and are sent when Kafka is back.
 
 Integration tests start their own in-memory Kafka, so `mvn verify` doesn't need Kafka running.
+
+## Redis (local, no Docker)
+
+cart-service stores carts in Redis.
+
+```bash
+brew install redis
+brew services start redis      # starts now and at every login; stop: brew services stop redis
+redis-cli ping                 # → PONG
+```
+
+Dev carts live in database 0; cart-service's integration tests use database 15 and empty it before each test.
+Unlike Kafka's console consumer, `redis-cli` commands return straight away (see `cart-service/README.md` for
+how to look at carts).
 
 ---
 

@@ -1,6 +1,7 @@
 package com.ecommerce.productservice.repository;
 
 import com.ecommerce.productservice.entity.Product;
+import com.ecommerce.productservice.entity.ProductStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -8,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -18,6 +21,9 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     boolean existsBySkuAndIdNot(String sku, UUID id);
 
     boolean existsByCategory_Id(UUID categoryId);
+
+    /** Bulk lookup for other services (e.g. the cart): one query instead of one per product. */
+    List<Product> findAllByIdInAndStatus(Collection<UUID> ids, ProductStatus status);
 
     /**
      * Applies stock from an INVENTORY_UPDATED event, only if it is newer than what we already have.

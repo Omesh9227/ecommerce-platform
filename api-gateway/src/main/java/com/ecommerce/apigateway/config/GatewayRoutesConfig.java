@@ -23,7 +23,8 @@ public class GatewayRoutesConfig {
     public RouteLocator routes(RouteLocatorBuilder builder,
                                @Value("${services.user-service.url}") String userServiceUrl,
                                @Value("${services.product-service.url}") String productServiceUrl,
-                               @Value("${services.inventory-service.url}") String inventoryServiceUrl) {
+                               @Value("${services.inventory-service.url}") String inventoryServiceUrl,
+                               @Value("${services.cart-service.url}") String cartServiceUrl) {
         return builder.routes()
                 .route("user-service", route -> route
                         .path("/api/v1/auth/**", "/api/v1/users/**", "/api/v1/admin/**")
@@ -37,6 +38,10 @@ public class GatewayRoutesConfig {
                         .path("/api/v1/inventory/**")
                         .filters(filter -> filter.dedupeResponseHeader(CORS_RESPONSE_HEADERS, "RETAIN_FIRST"))
                         .uri(inventoryServiceUrl))
+                .route("cart-service", route -> route
+                        .path("/api/v1/cart/**")
+                        .filters(filter -> filter.dedupeResponseHeader(CORS_RESPONSE_HEADERS, "RETAIN_FIRST"))
+                        .uri(cartServiceUrl))
                 .build();
     }
 }

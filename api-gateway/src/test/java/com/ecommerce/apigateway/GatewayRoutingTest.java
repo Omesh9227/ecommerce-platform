@@ -35,6 +35,7 @@ class GatewayRoutingTest {
         // The same stub stands in for product-service; it echoes the path, so tests can tell which route was used
         registry.add("services.product-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.inventory-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.cart-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -336,6 +337,30 @@ class GatewayRoutingTest {
                 .expectBody()
                 .jsonPath("$.path").isEqualTo("/api/v1/inventory/reservations")
                 .jsonPath("$.method").isEqualTo("POST");
+    }
+
+    // ---------- Cart (cart-service, any logged-in user) ----------
+
+    @Test
+    void cart_withoutToken_returns401() {
+        webTestClient.get().uri("/api/v1/cart")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void cart_asCustomer_isForwardedWithIdentity() {
+        webTestClient.post().uri("/api/v1/cart/items")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/cart/items")
+                .jsonPath("$.method").isEqualTo("POST")
+                .jsonPath("$.role").isEqualTo("CUSTOMER")
+                .jsonPath("$.userId").isEqualTo(customerId.toString());
     }
 
     // ---------- Routing / errors ----------
