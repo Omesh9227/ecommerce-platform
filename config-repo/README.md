@@ -12,6 +12,7 @@ use `${PLACEHOLDERS}`, which each service fills in from `.env` (a test fails the
 | `order-service.properties` | order-service | shipping fee, free-shipping threshold, payment window, expiry timings |
 | `payment-service.properties` | payment-service | payment provider (`simulated`) |
 | `notification-service.properties` | notification-service | sender address and name, store name, support email |
+| `wishlist-service.properties` | wishlist-service | max saved products, price-drop email threshold (%) |
 
 A service's own file wins over `application.properties`; both win over the service's
 `src/main/resources/application.properties`.

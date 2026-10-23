@@ -12,7 +12,7 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 /**
- * notification-service only consumes. An event that can't be handled - mail server down, or a payment event that
+ * notification-service only consumes (order-, payment- and wishlist-events). An event that can't be handled - mail server down, or a payment event that
  * arrived before its order (different topics, no ordering between them) - is retried with growing pauses for about
  * 30 s, then sent to its own dead-letter topic "&lt;topic&gt;.notification.DLT" (other services consuming the same topics
  * have their own DLTs, so it is always clear whose failure it was). Malformed events are not retried.
@@ -30,6 +30,11 @@ public class KafkaConfig {
     @Bean
     public NewTopic paymentEventsDeadLetterTopic(KafkaTopicsProperties topics) {
         return TopicBuilder.name(topics.paymentEvents() + DLT_SUFFIX).partitions(topics.partitions()).replicas(1).build();
+    }
+
+    @Bean
+    public NewTopic wishlistEventsDeadLetterTopic(KafkaTopicsProperties topics) {
+        return TopicBuilder.name(topics.wishlistEvents() + DLT_SUFFIX).partitions(topics.partitions()).replicas(1).build();
     }
 
     @Bean

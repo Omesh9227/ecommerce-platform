@@ -9,7 +9,7 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
                         ├─ GET /api/v1/products/**, /api/v1/categories/**   → public
                         └─ POST / PUT / DELETE on those paths              → ADMIN only
 
-product-service ── product-events ──► Kafka ──► inventory-service
+product-service ── product-events ──► Kafka ──► inventory-service, wishlist-service (price drops)
 product-service ◄── inventory-events ── Kafka ◄── inventory-service   (availableQuantity / inStock)
 ```
 
@@ -62,7 +62,7 @@ product-service ◄── inventory-events ── Kafka ◄── inventory-serv
 
 | Topic              | Direction | Events                                                     |
 |--------------------|-----------|------------------------------------------------------------|
-| `product-events`   | publishes | `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DISCONTINUED` (key = productId) |
+| `product-events`   | publishes | `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DISCONTINUED` (key = productId), with `price` and `sellingPrice` |
 | `inventory-events` | consumes  | `INVENTORY_UPDATED` → sets `availableQuantity` / `inStock` on the product |
 
 Products start with `availableQuantity: 0`, `inStock: false` until inventory-service reports stock.

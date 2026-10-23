@@ -15,6 +15,9 @@ public final class EventTypes {
     public static final String PAYMENT_FAILED = "PAYMENT_FAILED";
     public static final String PAYMENT_REFUNDED = "PAYMENT_REFUNDED";
 
+    // wishlist-events (wishlist-service)
+    public static final String WISHLIST_PRICE_DROPPED = "WISHLIST_PRICE_DROPPED";
+
     private EventTypes() {
     }
 }

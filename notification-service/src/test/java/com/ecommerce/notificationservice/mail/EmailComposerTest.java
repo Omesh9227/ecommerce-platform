@@ -4,6 +4,7 @@ import com.ecommerce.notificationservice.config.NotificationProperties;
 import com.ecommerce.notificationservice.event.EventTypes;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.WishlistEvent;
 import org.junit.jupiter.api.Test;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
@@ -72,6 +73,35 @@ class EmailComposerTest {
 
         EmailContent refunded = composer.forPaymentEvent(payment(EventTypes.PAYMENT_REFUNDED, null), items).orElseThrow();
         assertThat(refunded.subject()).isEqualTo("Refund of INR 1,999.50 for order ORD-ABC123456789");
+    }
+
+    @Test
+    void wishlistPriceDrop_saysWasNowAndTheSaving() {
+        WishlistEvent drop = new WishlistEvent(UUID.randomUUID(), EventTypes.WISHLIST_PRICE_DROPPED, UUID.randomUUID(),
+                "omesh@example.com", UUID.randomUUID(), "PHONE", "Pixel 8", new BigDecimal("1800.00"),
+                new BigDecimal("1500.00"), new BigDecimal("1350.50"), "INR");
+
+        EmailContent email = composer.forWishlistEvent(drop).orElseThrow();
+
+        assertThat(email.subject()).isEqualTo("Price drop: Pixel 8 is now INR 1,350.50");
+        assertThat(email.intro()).isEqualTo("Pixel 8 dropped from INR 1,500.00 to INR 1,350.50.");
+        assertThat(email.details()).extracting(EmailContent.Detail::label, EmailContent.Detail::value).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Product", "Pixel 8"),
+                org.assertj.core.groups.Tuple.tuple("Was", "INR 1,500.00"),
+                org.assertj.core.groups.Tuple.tuple("Now", "INR 1,350.50"),
+                org.assertj.core.groups.Tuple.tuple("You save", "INR 149.50"),
+                // an earlier email already told them about 1,500: the price when saved is shown too
+                org.assertj.core.groups.Tuple.tuple("When you saved it", "INR 1,800.00"));
+        assertThat(email.items()).isEmpty();
+        assertThat(email.total()).isNull();
+    }
+
+    @Test
+    void otherWishlistEvents_sendNoEmail() {
+        WishlistEvent other = new WishlistEvent(UUID.randomUUID(), "WISHLIST_SOMETHING_NEW", UUID.randomUUID(),
+                "omesh@example.com", UUID.randomUUID(), "PHONE", "Pixel 8", null, null, null, "INR");
+
+        assertThat(composer.forWishlistEvent(other)).isEmpty();
     }
 
     @Test
