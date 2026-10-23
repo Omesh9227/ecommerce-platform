@@ -14,9 +14,10 @@ Docker/Docker Compose is added only after all services work locally.
 | cart-service    | 8084 | Redis (`cart:{userId}`) | Phase 4 — complete |
 | order-service   | 8085 | `ecommerce_order_db`   | Phase 5 — complete; payments in Phase 6 |
 | payment-service | 8086 | `ecommerce_payment_db` | Phase 6 — complete (simulated gateway) |
+| notification-service | 8087 | `ecommerce_notification_db` | Phase 7 — complete (emails via Mailpit locally) |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka + Redis → user-service → product-service → inventory-service → cart-service → order-service → payment-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis + Mailpit → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
 ## Local prerequisites
@@ -26,6 +27,7 @@ Each service has its own README with APIs, run/test steps and a Postman collecti
 - PostgreSQL on `localhost:5432` (pgAdmin for inspecting data)
 - Kafka on `localhost:9092` (below)
 - Redis on `localhost:6379` (below)
+- Mailpit on `localhost:1025` / inbox http://localhost:8025 (below)
 - Postman
 
 ## Kafka (local, no Docker)
@@ -49,8 +51,8 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic inventory-event
 
 Topics (created by the services on startup, 3 partitions, key = productId so each product's events stay in order):
 `product-events`, `inventory-events`, `order-events`, `payment-events` (both keyed by orderId), and dead-letter topics
-`product-events.DLT`, `inventory-events.DLT`, `order-events.DLT`, `payment-events.DLT` for
-messages that could not be processed. If Kafka is stopped, the services keep working: events wait in each
+`product-events.DLT`, `inventory-events.DLT`, `order-events.DLT`, `payment-events.DLT` (plus notification-service's own
+`order-events.notification.DLT` and `payment-events.notification.DLT`) for messages that could not be processed. If Kafka is stopped, the services keep working: events wait in each
 service's `outbox_events` table and are sent when Kafka is back.
 
 Integration tests start their own in-memory Kafka, so `mvn verify` doesn't need Kafka running.
@@ -68,6 +70,19 @@ redis-cli ping                 # → PONG
 Dev carts live in database 0; cart-service's integration tests use database 15 and empty it before each test.
 Unlike Kafka's console consumer, `redis-cli` commands return straight away (see `cart-service/README.md` for
 how to look at carts).
+
+## Mailpit (local email, no Docker)
+
+notification-service sends customer emails over SMTP. Locally, Mailpit catches them all (nothing reaches a real
+inbox) and shows them in a web inbox.
+
+```bash
+brew install mailpit
+brew services start mailpit    # SMTP on localhost:1025; stop: brew services stop mailpit
+open http://localhost:8025     # the inbox
+```
+
+notification-service's tests use a recording mail sender, so `mvn verify` doesn't need Mailpit.
 
 ---
 

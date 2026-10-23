@@ -38,6 +38,7 @@ class GatewayRoutingTest {
         registry.add("services.cart-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.order-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.payment-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.notification-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -437,6 +438,27 @@ class GatewayRoutingTest {
         webTestClient.get().uri("/api/v1/payments/orders/ORD-3FA85F645717")
                 .exchange()
                 .expectStatus().isUnauthorized();
+    }
+
+    // ---------- Notifications (notification-service) ----------
+
+    @Test
+    void myNotifications_asCustomer_areForwarded() {
+        webTestClient.get().uri("/api/v1/notifications")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/notifications")
+                .jsonPath("$.userId").isEqualTo(customerId.toString());
+    }
+
+    @Test
+    void notificationAdmin_asCustomer_returns403AtTheGateway() {
+        webTestClient.get().uri("/api/v1/notifications/admin")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
     }
 
     // ---------- Routing / errors ----------
