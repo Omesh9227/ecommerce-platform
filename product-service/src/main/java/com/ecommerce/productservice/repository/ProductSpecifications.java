@@ -25,7 +25,8 @@ public final class ProductSpecifications {
                                                       String brand,
                                                       String search,
                                                       BigDecimal minPrice,
-                                                      BigDecimal maxPrice) {
+                                                      BigDecimal maxPrice,
+                                                      Boolean inStock) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -50,6 +51,10 @@ public final class ProductSpecifications {
             }
             if (maxPrice != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("sellingPrice"), maxPrice));
+            }
+            if (inStock != null) {
+                predicates.add(inStock ? cb.greaterThan(root.get("availableQuantity"), 0)
+                        : cb.equal(root.get("availableQuantity"), 0));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };

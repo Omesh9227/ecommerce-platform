@@ -19,6 +19,8 @@ public record ProductResponse(
         BigDecimal sellingPrice,
         String currency,
         ProductStatus status,
+        int availableQuantity,
+        boolean inStock,
         List<String> imageUrls,
         Instant createdAt,
         Instant updatedAt

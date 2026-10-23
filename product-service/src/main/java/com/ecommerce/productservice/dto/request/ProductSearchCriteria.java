@@ -12,6 +12,7 @@ public record ProductSearchCriteria(
         String brand,
         BigDecimal minPrice,
         BigDecimal maxPrice,
-        ProductStatus status
+        ProductStatus status,
+        Boolean inStock
 ) {
 }

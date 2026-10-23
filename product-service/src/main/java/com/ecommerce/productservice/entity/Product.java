@@ -75,6 +75,18 @@ public class Product {
     @Column(name = "status", nullable = false, length = 20)
     private ProductStatus status;
 
+    /**
+     * Copy of inventory-service's available stock, written only by the INVENTORY_UPDATED consumer
+     * (native UPDATE). Read-only for JPA, so saving a product can never overwrite a newer stock value.
+     */
+    @Setter(AccessLevel.NONE)
+    @Column(name = "available_quantity", nullable = false, insertable = false, updatable = false)
+    private int availableQuantity;
+
+    @Setter(AccessLevel.NONE)
+    @Column(name = "inventory_version", nullable = false, insertable = false, updatable = false)
+    private long inventoryVersion;
+
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "product_images", joinColumns = @JoinColumn(name = "product_id"))
     @OrderColumn(name = "sort_order")
