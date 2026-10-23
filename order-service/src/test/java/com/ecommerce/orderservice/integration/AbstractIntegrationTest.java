@@ -1,5 +1,8 @@
 package com.ecommerce.orderservice.integration;
 
+import com.ecommerce.orderservice.event.EventTypes;
+import com.ecommerce.orderservice.event.PaymentEvent;
+import com.ecommerce.orderservice.service.PaymentEventHandler;
 import com.ecommerce.orderservice.support.MutableClock;
 import com.ecommerce.orderservice.support.StubServices;
 import com.ecommerce.orderservice.support.TestTokens;
@@ -47,7 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {"order-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
+@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 @Import(AbstractIntegrationTest.TestClockConfig.class)
 public abstract class AbstractIntegrationTest {
 
@@ -86,6 +89,8 @@ public abstract class AbstractIntegrationTest {
     protected JdbcTemplate jdbcTemplate;
     @Autowired
     protected MutableClock clock;
+    @Autowired
+    protected PaymentEventHandler paymentEventHandler;
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
@@ -132,6 +137,22 @@ public abstract class AbstractIntegrationTest {
         stub.addToCart(auth, productId, quantity);
         MvcResult result = checkout(auth, newKey(), checkoutJson()).andExpect(status().isCreated()).andReturn();
         return readJson(result).at("/data/orderNumber").asText();
+    }
+
+    protected UUID orderId(String orderNumber) {
+        return UUID.fromString(jdbcTemplate.queryForObject("SELECT id::text FROM orders WHERE order_number = ?",
+                String.class, orderNumber));
+    }
+
+    /** A PAYMENT_SUCCEEDED / PAYMENT_REFUNDED / PAYMENT_FAILED event as payment-service would publish it. */
+    protected PaymentEvent paymentEvent(String type, String orderNumber) {
+        return new PaymentEvent(UUID.randomUUID(), type, orderId(orderNumber), orderNumber,
+                new java.math.BigDecimal("1800.00"), "INR", "CARD", "VISA", "4242", null);
+    }
+
+    /** The order is paid (as if payment-service had sent PAYMENT_SUCCEEDED). */
+    protected void pay(String orderNumber) {
+        paymentEventHandler.handle(paymentEvent(EventTypes.PAYMENT_SUCCEEDED, orderNumber));
     }
 
     protected JsonNode readJson(MvcResult result) throws Exception {

@@ -36,6 +36,13 @@ public class OrderTransitions {
                 "Checkout started", now));
     }
 
+    /** Adds a timeline entry without changing the status (e.g. "refund completed"). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void note(CustomerOrder order, UUID actorId, String note, Instant now) {
+        historyRepository.save(new OrderStatusHistory(order.getId(), order.getStatus(), order.getStatus(), actorId, note, now));
+        log.info("Order {} note: {}", order.getOrderNumber(), note);
+    }
+
     /**
      * @param actorId who made the change; null for the system
      * @param note    shown in the timeline; for CANCELLED / CHECKOUT_FAILED it is also the order's statusReason

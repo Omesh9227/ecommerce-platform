@@ -118,7 +118,7 @@ public class ReservationServiceImpl implements ReservationService {
             case RELEASED -> {
                 return mapper.toResponse(reservation);
             }
-            case CONFIRMED -> throw new ConflictException(
+            case CONFIRMED, RETURNED -> throw new ConflictException(
                     "Reservation for order " + orderReference + " is already confirmed and cannot be released");
             case RESERVED -> {
                 // continue below
@@ -149,8 +149,9 @@ public class ReservationServiceImpl implements ReservationService {
             case CONFIRMED -> {
                 return mapper.toResponse(reservation);
             }
-            case RELEASED -> throw new ConflictException(
-                    "Reservation for order " + orderReference + " was released and cannot be confirmed");
+            case RELEASED, RETURNED -> throw new ConflictException(
+                    "Reservation for order " + orderReference + " was " + reservation.getStatus().name().toLowerCase()
+                            + " and cannot be confirmed");
             case RESERVED -> {
                 // continue below
             }
@@ -170,6 +171,39 @@ public class ReservationServiceImpl implements ReservationService {
         stockChangeRecorder.record(new ArrayList<>(items.values()), movements);
 
         log.info("Confirmed reservation order={} by={}", orderReference, actorId);
+        return mapper.toResponse(reservation);
+    }
+
+    @Override
+    @Transactional
+    public ReservationResponse returnStock(String orderReference, UUID actorId) {
+        Reservation reservation = lockReservation(orderReference);
+        switch (reservation.getStatus()) {
+            case RETURNED -> {
+                return mapper.toResponse(reservation);
+            }
+            case RESERVED -> throw new ConflictException(
+                    "Reservation for order " + orderReference + " was never confirmed; release it instead");
+            case RELEASED -> throw new ConflictException(
+                    "Reservation for order " + orderReference + " was released; there is no stock to return");
+            case CONFIRMED -> {
+                // continue below
+            }
+        }
+
+        Map<UUID, InventoryItem> items = lockItems(productIds(reservation));
+        List<StockMovement> movements = new ArrayList<>();
+        for (ReservationItem line : reservation.getItems()) {
+            InventoryItem item = items.get(line.getProductId());
+            item.setQuantityOnHand(item.getQuantityOnHand() + line.getQuantity());
+            movements.add(StockChangeRecorder.movement(item, MovementType.RETURN, line.getQuantity(),
+                    null, orderReference, actorId));
+        }
+        reservation.setStatus(ReservationStatus.RETURNED);
+        reservationRepository.saveAndFlush(reservation);
+        stockChangeRecorder.record(new ArrayList<>(items.values()), movements);
+
+        log.info("Returned stock for order={} by={}", orderReference, actorId);
         return mapper.toResponse(reservation);
     }
 

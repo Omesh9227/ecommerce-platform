@@ -70,6 +70,11 @@ public class InventoryClient {
         return post(RESERVATIONS_PATH + "/{reference}/confirm", orderReference);
     }
 
+    /** Undoes a sale (paid order cancelled before shipping): the stock goes back on hand. */
+    public ReservationView returnStock(String orderReference) {
+        return post(RESERVATIONS_PATH + "/{reference}/return", orderReference);
+    }
+
     private ReservationView post(String path, String orderReference) {
         try {
             return unwrap(restClient.post()

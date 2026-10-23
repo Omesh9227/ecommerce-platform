@@ -37,6 +37,7 @@ class GatewayRoutingTest {
         registry.add("services.inventory-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.cart-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.order-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.payment-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -403,6 +404,37 @@ class GatewayRoutingTest {
     @Test
     void orders_withoutToken_return401() {
         webTestClient.get().uri("/api/v1/orders")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    // ---------- Payments (payment-service) ----------
+
+    @Test
+    void pay_asCustomer_isForwarded() {
+        webTestClient.post().uri("/api/v1/payments/orders/ORD-3FA85F645717/pay")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .header("Idempotency-Key", "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/payments/orders/ORD-3FA85F645717/pay")
+                .jsonPath("$.role").isEqualTo("CUSTOMER");
+    }
+
+    @Test
+    void paymentAdmin_asCustomer_returns403AtTheGateway() {
+        webTestClient.get().uri("/api/v1/payments/admin")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void payments_withoutToken_return401() {
+        webTestClient.get().uri("/api/v1/payments/orders/ORD-3FA85F645717")
                 .exchange()
                 .expectStatus().isUnauthorized();
     }

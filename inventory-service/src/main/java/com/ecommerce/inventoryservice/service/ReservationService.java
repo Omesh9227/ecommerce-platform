@@ -21,4 +21,7 @@ public interface ReservationService {
 
     /** Turns the hold into a sale: on-hand and reserved both go down. Idempotent. */
     ReservationResponse confirm(String orderReference, UUID actorId);
+
+    /** Undoes a sale (paid order cancelled before shipping): the stock goes back on hand. Idempotent. */
+    ReservationResponse returnStock(String orderReference, UUID actorId);
 }

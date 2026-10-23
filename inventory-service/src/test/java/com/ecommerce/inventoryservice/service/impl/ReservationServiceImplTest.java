@@ -256,4 +256,39 @@ class ReservationServiceImplTest {
                 .isInstanceOf(ConflictException.class);
         verifyNoInteractions(itemRepository, stockChangeRecorder);
     }
+
+    // ---------- returnStock ----------
+
+    @Test
+    void returnStock_putsSoldUnitsBackOnHand() {
+        Reservation reservation = reservation("ORD-1", ReservationStatus.CONFIRMED, phoneId, 3);
+        InventoryItem phone = item(phoneId, "PHONE", "ACTIVE", 7, 0);
+        when(reservationRepository.findByOrderReferenceForUpdate("ORD-1")).thenReturn(Optional.of(reservation));
+        when(itemRepository.findAllByIdForUpdate(any())).thenReturn(List.of(phone));
+
+        ReservationResponse response = reservationService.returnStock("ORD-1", adminId);
+
+        assertThat(response.status()).isEqualTo(ReservationStatus.RETURNED);
+        assertThat(phone.getQuantityOnHand()).isEqualTo(10);
+        verify(stockChangeRecorder).record(anyList(), movementsCaptor.capture());
+        assertThat(movementsCaptor.getValue()).singleElement().satisfies(m -> {
+            assertThat(m.getMovementType()).isEqualTo(MovementType.RETURN);
+            assertThat(m.getQuantityChange()).isEqualTo(3);
+        });
+    }
+
+    @Test
+    void returnStock_twice_isHarmless_andNeedsAConfirmedReservation() {
+        when(reservationRepository.findByOrderReferenceForUpdate("ORD-1"))
+                .thenReturn(Optional.of(reservation("ORD-1", ReservationStatus.RETURNED, phoneId, 3)));
+        assertThat(reservationService.returnStock("ORD-1", adminId).status()).isEqualTo(ReservationStatus.RETURNED);
+
+        when(reservationRepository.findByOrderReferenceForUpdate("ORD-2"))
+                .thenReturn(Optional.of(reservation("ORD-2", ReservationStatus.RESERVED, phoneId, 3)));
+        assertThatThrownBy(() -> reservationService.returnStock("ORD-2", adminId))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("release it instead");
+
+        verifyNoInteractions(itemRepository, stockChangeRecorder);
+    }
 }

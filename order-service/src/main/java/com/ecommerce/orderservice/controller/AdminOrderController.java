@@ -66,15 +66,6 @@ public class AdminOrderController {
         return ResponseEntity.ok(ApiResult.of("Orders fetched successfully", queryService.allOrders(status, userId, pageable)));
     }
 
-    @Operation(summary = "Mark as paid (temporary)", description = "PENDING_PAYMENT -> CONFIRMED and the reserved stock "
-            + "becomes a sale. Until payment-service exists (next phase), payments are confirmed by hand here.")
-    @PostMapping("/{orderNumber}/confirm-payment")
-    public ResponseEntity<ApiResult<OrderResponse>> confirmPayment(
-            @PathVariable("orderNumber") String orderNumber,
-            @Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser admin) {
-        return ResponseEntity.ok(ApiResult.of("Payment confirmed", lifecycleService.confirmPayment(orderNumber, admin)));
-    }
-
     @Operation(summary = "Mark as shipped", description = "CONFIRMED -> SHIPPED, with optional carrier and tracking number.")
     @PostMapping("/{orderNumber}/ship")
     public ResponseEntity<ApiResult<OrderResponse>> ship(
@@ -92,7 +83,7 @@ public class AdminOrderController {
         return ResponseEntity.ok(ApiResult.of("Order delivered", lifecycleService.deliver(orderNumber, admin)));
     }
 
-    @Operation(summary = "Cancel any order", description = "Same rules as the customer's cancel (only before payment).")
+    @Operation(summary = "Cancel any order", description = "Same rules as the customer's cancel: before shipping; paid orders are refunded.")
     @PostMapping("/{orderNumber}/cancel")
     public ResponseEntity<ApiResult<OrderResponse>> cancel(
             @PathVariable("orderNumber") String orderNumber,
