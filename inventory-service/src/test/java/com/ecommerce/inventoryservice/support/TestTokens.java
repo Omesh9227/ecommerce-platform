@@ -28,6 +28,11 @@ public final class TestTokens {
         return build(SECRET, ISSUER, userId, "omesh@example.com", "CUSTOMER", Instant.now().plusSeconds(3600));
     }
 
+    /** A service-to-service token, like the one order-service creates for itself. */
+    public static String service(UUID serviceId) {
+        return build(SECRET, ISSUER, serviceId, "order-service@internal.ecommerce", "SERVICE", Instant.now().plusSeconds(300));
+    }
+
     public static String expiredAdmin(UUID userId) {
         return build(SECRET, ISSUER, userId, "admin@ecommerce.com", "ADMIN", Instant.now().minusSeconds(60));
     }

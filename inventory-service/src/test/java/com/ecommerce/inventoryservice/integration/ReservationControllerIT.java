@@ -162,6 +162,29 @@ class ReservationControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.message").value(containsString("6 unit(s) are reserved")));
     }
 
+    @Test
+    void serviceToken_canUseReservations_butNotStockApis() throws Exception {
+        UUID phone = createItem("PHONE");
+        setStock(phone, 10);
+        String serviceAuth = "Bearer " + com.ecommerce.inventoryservice.support.TestTokens.service(UUID.randomUUID());
+
+        mockMvc.perform(post(RESERVATIONS_URL)
+                        .header(HttpHeaders.AUTHORIZATION, serviceAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reservationJson("ORD-SVC-1", phone, 2)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post(RESERVATIONS_URL + "/ORD-SVC-1/confirm").header(HttpHeaders.AUTHORIZATION, serviceAuth))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get(INVENTORY_URL + "/" + phone).header(HttpHeaders.AUTHORIZATION, serviceAuth))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put(INVENTORY_URL + "/" + phone + "/stock")
+                        .header(HttpHeaders.AUTHORIZATION, serviceAuth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantityOnHand\": 100}"))
+                .andExpect(status().isForbidden());
+    }
+
     // ---------- Release / confirm ----------
 
     @Test
