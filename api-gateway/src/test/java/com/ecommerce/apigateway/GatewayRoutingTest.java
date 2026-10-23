@@ -36,6 +36,7 @@ class GatewayRoutingTest {
         registry.add("services.product-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.inventory-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.cart-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.order-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -361,6 +362,49 @@ class GatewayRoutingTest {
                 .jsonPath("$.method").isEqualTo("POST")
                 .jsonPath("$.role").isEqualTo("CUSTOMER")
                 .jsonPath("$.userId").isEqualTo(customerId.toString());
+    }
+
+    // ---------- Orders (order-service) ----------
+
+    @Test
+    void checkout_asCustomer_isForwarded_withTheIdempotencyKey() {
+        webTestClient.post().uri("/api/v1/orders/checkout")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .header("Idempotency-Key", "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/orders/checkout")
+                .jsonPath("$.role").isEqualTo("CUSTOMER")
+                .jsonPath("$.authorizationPresent").isEqualTo(true);
+    }
+
+    @Test
+    void orderAdminEndpoints_asCustomer_return403AtTheGateway() {
+        webTestClient.get().uri("/api/v1/orders/admin")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void orderAdminEndpoints_asAdmin_areForwarded() {
+        webTestClient.post().uri("/api/v1/orders/admin/ORD-3FA85F645717/ship")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/orders/admin/ORD-3FA85F645717/ship")
+                .jsonPath("$.role").isEqualTo("ADMIN");
+    }
+
+    @Test
+    void orders_withoutToken_return401() {
+        webTestClient.get().uri("/api/v1/orders")
+                .exchange()
+                .expectStatus().isUnauthorized();
     }
 
     // ---------- Routing / errors ----------

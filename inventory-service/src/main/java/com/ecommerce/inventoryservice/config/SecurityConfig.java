@@ -15,9 +15,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Every inventory API is ADMIN-only. Customers see availability through product-service
+ * Stock APIs are ADMIN-only. Customers see availability through product-service
  * (availableQuantity / inStock on each product), which is kept up to date by INVENTORY_UPDATED events.
- * Reservation endpoints will be called by order-service later (service-to-service auth comes then).
+ * Reservation APIs are also open to role SERVICE: order-service calls them with its own short-lived service token
+ * (it talks to this service directly, never through the gateway).
  */
 @Configuration
 @EnableWebSecurity
@@ -55,6 +56,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_DOC_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_ACTUATOR_ENDPOINTS).permitAll()
                         .requestMatchers("/error").permitAll()
+                        .requestMatchers("/api/v1/inventory/reservations/**").hasAnyRole("ADMIN", "SERVICE")
                         .requestMatchers("/api/v1/inventory/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtValidator), UsernamePasswordAuthenticationFilter.class);
