@@ -1,6 +1,8 @@
 # api-gateway
 
 Single entry point for all clients on **port 8080**. Built on Spring Cloud Gateway (reactive/Netty).
+Services are found through **Eureka** (discovery-server): every route points at `lb://<service-name>`, and the
+gateway sends each request to a running instance of that service.
 
 ```
 Postman / frontend ──► api-gateway :8080 ──► user-service :8081
@@ -42,16 +44,16 @@ New services are added as routes in `config/GatewayRoutesConfig.java`.
 
 ## Run
 
-1. Start **user-service** (8081), **product-service** (8082), **inventory-service** (8083), **cart-service** (8084), **order-service** (8085), **payment-service** (8086) and **notification-service** (8087) first.
+1. Start **discovery-server** (8761) and **config-server** (8888), then **user-service** (8081), **product-service** (8082), **inventory-service** (8083), **cart-service** (8084), **order-service** (8085), **payment-service** (8086) and **notification-service** (8087).
 2. Start the gateway: run `ApiGatewayApplication` in IntelliJ, or `mvn spring-boot:run` from this folder.
 3. Check http://localhost:8080/actuator/health → `{"status":"UP"}`.
 4. Check routes: http://localhost:8080/actuator/gateway/routes
 
 Configuration comes from the root `.env` (shared with user-service). The gateway needs only `JWT_SECRET`
-(same value as user-service). Optional: `USER_SERVICE_URL` (default `http://localhost:8081`),
-`PRODUCT_SERVICE_URL` (default `http://localhost:8082`), `INVENTORY_SERVICE_URL` (default `http://localhost:8083`),
-`CART_SERVICE_URL` (default `http://localhost:8084`), `ORDER_SERVICE_URL` (default `http://localhost:8085`), `PAYMENT_SERVICE_URL` (default `http://localhost:8086`),
-`NOTIFICATION_SERVICE_URL` (default `http://localhost:8087`), `CORS_ALLOWED_ORIGINS`.
+(same value as user-service), plus the Eureka and Config Server logins. Optional: `CORS_ALLOWED_ORIGINS`.
+Each route's address is `lb://<service-name>` (e.g. `lb://order-service`); to bypass Eureka for one service set
+e.g. `ORDER_SERVICE_URL=http://localhost:8085`. If no instance of a service is running, the gateway answers with
+a JSON 503.
 
 ## Test
 

@@ -37,6 +37,21 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Spring Cloud: settings from config-server, registration in Eureka (discovery-server) -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <!-- Cache for the load balancer's lists of instances (lb://...); without it Spring Cloud warns at startup -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Spring Cloud Gateway (reactive, Netty-based). Do NOT add spring-boot-starter-web here. -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>

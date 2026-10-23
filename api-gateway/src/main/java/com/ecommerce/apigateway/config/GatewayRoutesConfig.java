@@ -8,7 +8,9 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Route table: which path prefix goes to which service.
- * New services (product, cart, order, ...) are added here as new routes.
+ * Each URL is lb://&lt;service-name&gt; by default: the gateway asks Eureka (discovery-server) where the service
+ * runs and spreads requests over its instances; no instance running gives a JSON 503.
+ * New services are added here as new routes.
  */
 @Configuration
 public class GatewayRoutesConfig {

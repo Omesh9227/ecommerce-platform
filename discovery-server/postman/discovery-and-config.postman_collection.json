@@ -1,0 +1,405 @@
+{
+  "info": {
+    "name": "E-Commerce - Discovery & Config",
+    "description": "Checks Eureka (discovery-server :8761), the Config Server (config-server :8888) and that the gateway finds services through Eureka. First set the collection variables eurekaPassword and configPassword to EUREKA_PASSWORD and CONFIG_SERVER_PASSWORD from your .env (Current value). Start everything first; a service appears in Eureka within ~10 s of starting. Then run the Order or Notification collection: order-service now finds cart-, product- and inventory-service through Eureka too.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Eureka (discovery-server)",
+      "item": [
+        {
+          "name": "Registry needs a login (401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{eurekaUrl}}/eureka/apps",
+              "host": [
+                "{{eurekaUrl}}"
+              ],
+              "path": [
+                "eureka",
+                "apps"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Passwords are filled in (collection variables eurekaPassword / configPassword = values from .env)', () => {",
+                  "    pm.expect(pm.collectionVariables.get('eurekaPassword'), 'eurekaPassword').to.not.be.empty;",
+                  "    pm.expect(pm.collectionVariables.get('configPassword'), 'configPassword').to.not.be.empty;",
+                  "});",
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Every service is registered and UP",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{eurekaUrl}}/eureka/apps",
+              "host": [
+                "{{eurekaUrl}}"
+              ],
+              "path": [
+                "eureka",
+                "apps"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{eurekaUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{eurekaPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const apps = [].concat(pm.response.json().applications.application || []);",
+                  "const status = {};",
+                  "apps.forEach(app => status[app.name] = [].concat(app.instance).map(i => i.status));",
+                  "console.log('Registered:', status);",
+                  "const expected = [\"CONFIG-SERVER\", \"API-GATEWAY\", \"USER-SERVICE\", \"PRODUCT-SERVICE\", \"INVENTORY-SERVICE\", \"CART-SERVICE\", \"ORDER-SERVICE\", \"PAYMENT-SERVICE\", \"NOTIFICATION-SERVICE\"];",
+                  "expected.forEach(name => pm.test(`${name} is registered and UP`, () => {",
+                  "    pm.expect(status[name], `${name} is not in Eureka - is it running?`).to.be.an('array');",
+                  "    pm.expect(status[name]).to.include('UP');",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "One service: ORDER-SERVICE (host, port)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{eurekaUrl}}/eureka/apps/ORDER-SERVICE",
+              "host": [
+                "{{eurekaUrl}}"
+              ],
+              "path": [
+                "eureka",
+                "apps",
+                "ORDER-SERVICE"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{eurekaUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{eurekaPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const instance = [].concat(pm.response.json().application.instance)[0];",
+                  "pm.test('Registered as order-service:8085', () => pm.expect(instance.instanceId).to.eql('order-service:8085'));",
+                  "pm.test('On localhost', () => pm.expect(instance.hostName).to.eql('localhost'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Config Server (config-server)",
+      "item": [
+        {
+          "name": "Configuration needs a login (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{configUrl}}/order-service/default",
+              "host": [
+                "{{configUrl}}"
+              ],
+              "path": [
+                "order-service",
+                "default"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "What order-service gets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{configUrl}}/order-service/default",
+              "host": [
+                "{{configUrl}}"
+              ],
+              "path": [
+                "order-service",
+                "default"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{configUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{configPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const sources = pm.response.json().propertySources;",
+                  "const value = key => { const s = sources.find(s => key in s.source); return s && s.source[key]; };",
+                  "pm.test('Its own file (config-repo/order-service.properties)', () => pm.expect(value('app.order.shipping-fee')).to.eql('40.00'));",
+                  "pm.test('The shared file (config-repo/application.properties)', () => pm.expect(value('shop.currency')).to.eql('INR'));",
+                  "pm.test('Secrets stay placeholders (filled in by the service from .env)', () =>",
+                  "    pm.expect(value('eureka.client.service-url.defaultZone')).to.include('${EUREKA_PASSWORD}'));",
+                  "pm.test('Its file wins over the shared one (listed first)', () => pm.expect(sources[0].name).to.include('order-service'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "What notification-service gets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{configUrl}}/notification-service/default",
+              "host": [
+                "{{configUrl}}"
+              ],
+              "path": [
+                "notification-service",
+                "default"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{configUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{configPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const sources = pm.response.json().propertySources;",
+                  "const value = key => { const s = sources.find(s => key in s.source); return s && s.source[key]; };",
+                  "pm.test('Sender address', () => pm.expect(value('app.notification.from-address')).to.eql('no-reply@ecommerce.local'));",
+                  "pm.test('Not order-service settings', () => pm.expect(value('app.order.shipping-fee')).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Gateway uses Eureka",
+      "item": [
+        {
+          "name": "Every gateway route uses Eureka (lb://)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/gateway/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "gateway",
+                "routes"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const routes = pm.response.json();",
+                  "pm.test('7 routes', () => pm.expect(routes.length).to.eql(7));",
+                  "routes.forEach(r => pm.test(`${r.route_id} -> ${r.uri}`, () => pm.expect(r.uri).to.eql(`lb://${r.route_id}`)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products through the gateway (found in Eureka)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products?size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "1"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Product list', () => pm.expect(pm.response.json().success).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "eurekaUrl",
+      "value": "http://localhost:8761"
+    },
+    {
+      "key": "configUrl",
+      "value": "http://localhost:8888"
+    },
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "eurekaUsername",
+      "value": "eureka"
+    },
+    {
+      "key": "eurekaPassword",
+      "value": ""
+    },
+    {
+      "key": "configUsername",
+      "value": "config"
+    },
+    {
+      "key": "configPassword",
+      "value": ""
+    }
+  ]
+}
