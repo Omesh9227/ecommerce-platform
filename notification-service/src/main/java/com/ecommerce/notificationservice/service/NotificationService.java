@@ -4,6 +4,7 @@ import com.ecommerce.notificationservice.entity.Notification;
 import com.ecommerce.notificationservice.entity.OrderSnapshot;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.WishlistEvent;
 import com.ecommerce.notificationservice.mail.EmailComposer;
 import com.ecommerce.notificationservice.mail.EmailContent;
 import com.ecommerce.notificationservice.mail.EmailSender;
@@ -76,6 +77,18 @@ public class NotificationService {
                         order.getEmail(), content));
     }
 
+    @Transactional
+    public void onWishlistEvent(WishlistEvent event) {
+        if (event.eventId() == null || event.eventType() == null || event.userId() == null) {
+            throw new IllegalArgumentException("Wishlist event " + event.eventId() + " is missing required fields");
+        }
+        if (notificationRepository.existsByEventId(event.eventId())) {
+            return;
+        }
+        composer.forWishlistEvent(event).ifPresent(content ->
+                send(event.eventId(), event.eventType(), null, null, event.userId(), event.userEmail(), content));
+    }
+
     // ---------- Helpers ----------
 
     private void rememberOrder(OrderEvent event) {
@@ -88,15 +101,16 @@ public class NotificationService {
 
     private void send(UUID eventId, String eventType, UUID orderId, String orderNumber, UUID userId, String recipient,
                       EmailContent content) {
+        String about = orderNumber != null ? "order " + orderNumber : "user " + userId;
         if (recipient == null || recipient.isBlank()) {
-            log.warn("No email address for order {}; {} not sent", orderNumber, eventType);
+            log.warn("No email address for {}; {} not sent", about, eventType);
             return;
         }
         emailSender.send(recipient, content);
         Instant now = clock.instant();
         notificationRepository.save(Notification.emailSent(eventId, eventType, orderId, orderNumber, userId, recipient,
                 content.subject(), now));
-        log.info("Email sent: {} for order {} to {}", eventType, orderNumber, mask(recipient));
+        log.info("Email sent: {} for {} to {}", eventType, about, mask(recipient));
     }
 
     private String writeItems(List<OrderEvent.Item> items) {

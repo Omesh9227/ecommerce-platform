@@ -149,6 +149,34 @@ class NotificationFlowIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void wishlistPriceDropOnKafka_emailsTheCustomer() throws Exception {
+        sendOnKafka("wishlist-events", customerId, priceDrop("1800.00", "1500.00"));
+
+        await().atMost(Duration.ofSeconds(20)).until(() -> mail.sent().size() == 1);
+        MimeMessage email = mail.sent().get(0);
+        assertThat(((InternetAddress) email.getAllRecipients()[0]).getAddress()).isEqualTo(EMAIL);
+        assertThat(email.getSubject()).isEqualTo("Price drop: Pixel 8 is now INR 1,500.00");
+        assertThat(RecordingMailSender.allText(email))
+                .contains("Pixel 8 dropped from INR 1,800.00 to INR 1,500.00", "You save", "INR 300.00");
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> notificationCount() == 1);
+        mockMvc.perform(get(NOTIFICATIONS_URL).header(HttpHeaders.AUTHORIZATION, customerAuth()))
+                .andExpect(jsonPath("$.data.content[0].eventType").value("WISHLIST_PRICE_DROPPED"))
+                .andExpect(jsonPath("$.data.content[0].orderNumber").doesNotExist());
+    }
+
+    @Test
+    void theSamePriceDropTwice_sendsOneEmail() {
+        var drop = priceDrop("1800.00", "1500.00");
+
+        notificationService.onWishlistEvent(drop);
+        notificationService.onWishlistEvent(drop);
+
+        assertThat(mail.sent()).hasSize(1);
+        assertThat(notificationCount()).isEqualTo(1);
+    }
+
+    @Test
     void customers_seeOnlyTheirOwnNotifications() throws Exception {
         UUID orderId = UUID.randomUUID();
         notificationService.onOrderEvent(orderEvent(EventTypes.ORDER_PLACED, orderId, "ORD-000000000009", 1));
