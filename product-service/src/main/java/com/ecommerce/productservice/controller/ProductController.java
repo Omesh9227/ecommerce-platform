@@ -53,7 +53,8 @@ public class ProductController {
             description = "Paginated, newest first by default. Customers only see ACTIVE products. "
                     + "categoryId includes sub-categories (Electronics also returns Mobiles). "
                     + "Price filters use the selling price. inStock filters on availability from inventory-service. "
-                    + "Sortable: name, brand, price, sellingPrice, availableQuantity, createdAt, updatedAt. "
+                    + "Sortable: name, brand, price, sellingPrice, availableQuantity, averageRating, reviewCount, "
+                    + "createdAt, updatedAt (e.g. sort=averageRating,desc for best rated). "
                     + "Example: ?search=iphone&categoryId=...&minPrice=10000&maxPrice=80000&sort=sellingPrice,asc")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Products returned"),

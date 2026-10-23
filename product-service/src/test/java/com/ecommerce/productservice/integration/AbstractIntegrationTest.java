@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {"product-events", "inventory-events"},
+@EmbeddedKafka(partitions = 1, topics = {"product-events", "inventory-events", "review-events"},
         bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 public abstract class AbstractIntegrationTest {
 

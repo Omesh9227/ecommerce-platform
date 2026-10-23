@@ -87,6 +87,22 @@ public class Product {
     @Column(name = "inventory_version", nullable = false, insertable = false, updatable = false)
     private long inventoryVersion;
 
+    /**
+     * Copy of review-service's rating summary, written only by the PRODUCT_RATING_UPDATED consumer (native UPDATE).
+     * Read-only for JPA, like availableQuantity.
+     */
+    @Setter(AccessLevel.NONE)
+    @Column(name = "average_rating", nullable = false, precision = 2, scale = 1, insertable = false, updatable = false)
+    private BigDecimal averageRating;
+
+    @Setter(AccessLevel.NONE)
+    @Column(name = "review_count", nullable = false, insertable = false, updatable = false)
+    private int reviewCount;
+
+    @Setter(AccessLevel.NONE)
+    @Column(name = "rating_version", nullable = false, insertable = false, updatable = false)
+    private long ratingVersion;
+
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "product_images", joinColumns = @JoinColumn(name = "product_id"))
     @OrderColumn(name = "sort_order")

@@ -35,6 +35,11 @@ public class KafkaConfig {
     }
 
     @Bean
+    public NewTopic reviewEventsDeadLetterTopic(KafkaTopicsProperties topics) {
+        return TopicBuilder.name(topics.reviewEvents() + DLT_SUFFIX).partitions(topics.partitions()).replicas(1).build();
+    }
+
+    @Bean
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
         // Explicit name: the default suffix differs between spring-kafka versions (".DLT" vs "-dlt").
         // Same partition as the original record; the DLT has the same number of partitions.

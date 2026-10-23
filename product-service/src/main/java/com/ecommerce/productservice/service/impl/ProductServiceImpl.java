@@ -43,7 +43,8 @@ public class ProductServiceImpl implements ProductService {
     private static final String PRODUCT = "Product";
 
     /** Only these fields can be used in ?sort=... (anything else is a 400, not a 500). */
-    static final Set<String> SORTABLE_FIELDS = Set.of("name", "brand", "price", "sellingPrice", "availableQuantity", "createdAt", "updatedAt");
+    static final Set<String> SORTABLE_FIELDS = Set.of("name", "brand", "price", "sellingPrice", "availableQuantity",
+            "averageRating", "reviewCount", "createdAt", "updatedAt");
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
