@@ -28,8 +28,8 @@ Postman ──► api-gateway :8080 ──► inventory-service :8083 ──► 
 Reservation lifecycle:
 
 ```
-reserve ──► RESERVED ──confirm──► CONFIRMED   (sale: on-hand and reserved both go down)
-                    └──release──► RELEASED    (cancelled: reserved goes down, stock is available again)
+reserve ──► RESERVED ──confirm──► CONFIRMED ──return──► RETURNED   (paid order cancelled: on-hand goes back up)
+                    └──release──► RELEASED    (cancelled before payment: reserved goes down, stock is available again)
 ```
 
 ## APIs (ADMIN; the reservation endpoints also accept order-service's own token, role `SERVICE`)
@@ -46,6 +46,7 @@ reserve ──► RESERVED ──confirm──► CONFIRMED   (sale: on-hand and
 | GET    | `/api/v1/inventory/reservations/{orderReference}`     |                                                             |
 | POST   | `/api/v1/inventory/reservations/{orderReference}/release` | Idempotent; 409 if already confirmed                    |
 | POST   | `/api/v1/inventory/reservations/{orderReference}/confirm` | Idempotent; 409 if already released                     |
+| POST   | `/api/v1/inventory/reservations/{orderReference}/return`  | Paid order cancelled before shipping: sold units back on hand (`RETURNED`) |
 
 Reservation errors: **409** not enough stock or product not `ACTIVE` (the message lists every problem),
 **400** unknown product or invalid request. A reservation is all-or-nothing.

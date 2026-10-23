@@ -12,10 +12,11 @@ Docker/Docker Compose is added only after all services work locally.
 | product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete; Kafka events in Phase 3 |
 | inventory-service | 8083 | `ecommerce_inventory_db` | Phase 3 — complete |
 | cart-service    | 8084 | Redis (`cart:{userId}`) | Phase 4 — complete |
-| order-service   | 8085 | `ecommerce_order_db`   | Phase 5 — complete |
+| order-service   | 8085 | `ecommerce_order_db`   | Phase 5 — complete; payments in Phase 6 |
+| payment-service | 8086 | `ecommerce_payment_db` | Phase 6 — complete (simulated gateway) |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka + Redis → user-service → product-service → inventory-service → cart-service → order-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis → user-service → product-service → inventory-service → cart-service → order-service → payment-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
 ## Local prerequisites
@@ -47,7 +48,8 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic inventory-event
 ```
 
 Topics (created by the services on startup, 3 partitions, key = productId so each product's events stay in order):
-`product-events`, `inventory-events`, `order-events` (key = orderId), and dead-letter topics `product-events.DLT`, `inventory-events.DLT` for
+`product-events`, `inventory-events`, `order-events`, `payment-events` (both keyed by orderId), and dead-letter topics
+`product-events.DLT`, `inventory-events.DLT`, `order-events.DLT`, `payment-events.DLT` for
 messages that could not be processed. If Kafka is stopped, the services keep working: events wait in each
 service's `outbox_events` table and are sent when Kafka is back.
 

@@ -103,13 +103,13 @@ public class OrderController {
         return ResponseEntity.ok(ApiResult.of("Order fetched successfully", queryService.getOrder(orderNumber, currentUser)));
     }
 
-    @Operation(summary = "Cancel my order", description = "Possible while it waits for payment; the reserved stock is "
-            + "released. Cancelling twice is harmless.")
+    @Operation(summary = "Cancel my order", description = "Possible until it ships. Unpaid: the reserved stock is released. "
+            + "Paid: the stock is returned and payment-service refunds the full amount. Cancelling twice is harmless.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cancelled"),
             @ApiResponse(responseCode = "404", description = "No such order (or not yours)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "409", description = "Already paid, shipped or delivered",
+            @ApiResponse(responseCode = "409", description = "Already shipped or delivered",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PostMapping("/{orderNumber}/cancel")

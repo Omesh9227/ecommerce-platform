@@ -286,6 +286,15 @@ public final class StubServices {
                 r.items.forEach((id, q) -> stock.get(id).reserved -= q);
                 r.status = "RELEASED";
             }
+        } else if (action.equals("return")) {
+            if (!r.status.equals("CONFIRMED") && !r.status.equals("RETURNED")) {
+                respond(exchange, 409, error(409, "Reservation was never confirmed; release it instead"));
+                return;
+            }
+            if (r.status.equals("CONFIRMED")) {
+                r.items.forEach((id, q) -> stock.get(id).onHand += q);
+                r.status = "RETURNED";
+            }
         } else if (action.equals("confirm")) {
             if (r.status.equals("RELEASED")) {
                 respond(exchange, 409, error(409, "Reservation was released and cannot be confirmed"));

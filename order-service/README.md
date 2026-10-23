@@ -18,8 +18,11 @@ Postman ──► api-gateway :8080 ──► order-service :8085 ──► prod
 ```
 CREATED ──► PENDING_PAYMENT ──► CONFIRMED ──► SHIPPED ──► DELIVERED
    │              │
-   ▼              ▼
-CHECKOUT_FAILED  CANCELLED  (by the customer, by an admin, or automatically after 30 min without payment)
+   ▼              ▼              ▼
+CHECKOUT_FAILED  CANCELLED ◄─────┘   (customer or admin before shipping; unpaid orders also after 30 min)
+
+PENDING_PAYMENT → CONFIRMED happens when payment-service reports PAYMENT_SUCCEEDED.
+Cancelling a CONFIRMED (paid) order returns its stock and payment-service refunds it (PAYMENT_REFUNDED → timeline).
 ```
 
 | Status            | Stock in inventory-service | Customer sees it |
@@ -28,7 +31,7 @@ CHECKOUT_FAILED  CANCELLED  (by the customer, by an admin, or automatically afte
 | `PENDING_PAYMENT` | reserved                   | yes |
 | `CONFIRMED`       | sold (on-hand reduced)     | yes |
 | `SHIPPED` / `DELIVERED` | sold                 | yes |
-| `CANCELLED`       | released                   | yes |
+| `CANCELLED`       | released (unpaid) / returned (paid, refunded) | yes |
 | `CHECKOUT_FAILED` | none (e.g. not enough stock) | no |
 
 ## APIs
@@ -40,17 +43,19 @@ CHECKOUT_FAILED  CANCELLED  (by the customer, by an admin, or automatically afte
 | POST   | `/api/v1/orders/checkout`              | Header `Idempotency-Key` (required). Body: `{shippingAddress, expectedTotal?}`. 201 placed / 200 same key again |
 | GET    | `/api/v1/orders`                       | My orders, newest first. `status`, `page`, `size`, `sort` (createdAt, totalAmount, status) |
 | GET    | `/api/v1/orders/{orderNumber}`         | With items, address and timeline. Someone else's order → 404 |
-| POST   | `/api/v1/orders/{orderNumber}/cancel`  | Optional `{reason}`. Only before payment; stock is released |
+| POST   | `/api/v1/orders/{orderNumber}/cancel`  | Optional `{reason}`. Until shipped. Unpaid: stock released. Paid: stock returned + full refund |
 
 **Admin**
 
 | Method | Path                                              | Notes |
 |--------|---------------------------------------------------|-------|
 | GET    | `/api/v1/orders/admin`                            | All orders incl. internal statuses. `status`, `userId`, paging |
-| POST   | `/api/v1/orders/admin/{orderNumber}/confirm-payment` | PENDING_PAYMENT → CONFIRMED (temporary until payment-service, Phase 6) |
 | POST   | `/api/v1/orders/admin/{orderNumber}/ship`         | Optional `{carrier, trackingNumber}` |
 | POST   | `/api/v1/orders/admin/{orderNumber}/deliver`      | |
 | POST   | `/api/v1/orders/admin/{orderNumber}/cancel`       | Same rules as the customer's cancel |
+
+Payment: `POST /api/v1/payments/orders/{orderNumber}/pay` on payment-service (see its README). The order is
+confirmed a moment later, when its `PAYMENT_SUCCEEDED` event arrives.
 
 Every status change is idempotent: repeating it returns the order unchanged with 200.
 
@@ -129,4 +134,7 @@ second order, and finally shows that a stock drop blocks checkout.
   accepts that role only on reservation endpoints. Customers' requests to cart-service use the customer's own token.
 - **Transactional outbox** for `order-events` (key = order id, so one order's events stay in order); each event
   carries `orderVersion` so consumers can ignore duplicates.
+- **Consumes `payment-events`**: `PAYMENT_SUCCEEDED` confirms the order (if it's still waiting for payment - if it was
+  cancelled meanwhile, payment-service refunds on its own), `PAYMENT_REFUNDED` adds a timeline entry. Failures retry
+  with exponential back-off (~30 s), then go to `payment-events.DLT`.
 - **Audit trail**: `order_status_history` records every change, who made it and why; shown as the order's timeline.

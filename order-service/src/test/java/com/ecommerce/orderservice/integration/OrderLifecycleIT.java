@@ -89,7 +89,7 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         String orderNumber = placeOrder(customerAuth, phone, 1);
 
         mockMvc.perform(get(ADMIN_URL).header(HttpHeaders.AUTHORIZATION, customerAuth)).andExpect(status().isForbidden());
-        mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/confirm-payment").header(HttpHeaders.AUTHORIZATION, customerAuth))
+        mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/ship").header(HttpHeaders.AUTHORIZATION, customerAuth))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get(ORDERS_URL)).andExpect(status().isUnauthorized());
     }
@@ -101,18 +101,16 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         UUID phone = stub.product("PHONE", "1000.00", "900.00", 10);
         String orderNumber = placeOrder(customerAuth, phone, 2);
 
-        admin(orderNumber, "confirm-payment")
-                .andExpect(status().isOk())
+        pay(orderNumber);
+        pay(orderNumber); // a repeated event changes nothing
+        mockMvc.perform(get(ORDERS_URL + "/" + orderNumber).header(HttpHeaders.AUTHORIZATION, customerAuth))
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
-                .andExpect(jsonPath("$.data.confirmedAt").exists());
+                .andExpect(jsonPath("$.data.confirmedAt").exists())
+                .andExpect(jsonPath("$.data.timeline[1].note").value("Paid by VISA ending 4242"));
         assertThat(stub.reservation(orderNumber).status).isEqualTo("CONFIRMED");
         assertThat(stub.stock(phone).onHand).isEqualTo(8);
         assertThat(stub.stock(phone).reserved).isZero();
 
-        // Paid orders can't be cancelled yet (refunds come with payment-service)
-        customerCancel(customerAuth, orderNumber, null)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(containsString("refunds")));
         admin(orderNumber, "deliver").andExpect(status().isConflict()); // must ship first
 
         mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/ship")
@@ -124,6 +122,9 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.carrier").value("Delhivery"))
                 .andExpect(jsonPath("$.data.trackingNumber").value("DLV123"));
         admin(orderNumber, "ship").andExpect(status().isOk()); // repeating is harmless
+        customerCancel(customerAuth, orderNumber, null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("on its way")));
 
         admin(orderNumber, "deliver")
                 .andExpect(status().isOk())
@@ -140,6 +141,45 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
                 .containsExactly("ORDER_PLACED", "ORDER_CONFIRMED", "ORDER_SHIPPED", "ORDER_DELIVERED");
         List<Long> versions = events.stream().map(r -> readVersion(r.value())).toList();
         assertThat(versions).isSorted().doesNotHaveDuplicates();
+    }
+
+    @Test
+    void cancellingAPaidOrder_returnsTheStock_andTheRefundShowsInTheTimeline() throws Exception {
+        UUID phone = stub.product("PHONE", "1000.00", "900.00", 10);
+        String orderNumber = placeOrder(customerAuth, phone, 2);
+        pay(orderNumber);
+        assertThat(stub.stock(phone).onHand).isEqualTo(8);
+
+        customerCancel(customerAuth, orderNumber, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.data.statusReason").value("Cancelled by customer - a full refund has been requested"));
+        assertThat(stub.reservation(orderNumber).status).isEqualTo("RETURNED");
+        assertThat(stub.stock(phone).onHand).isEqualTo(10);
+
+        // payment-service refunds and reports it (twice, to prove it is recorded once)
+        paymentEventHandler.handle(paymentEvent("PAYMENT_REFUNDED", orderNumber));
+        paymentEventHandler.handle(paymentEvent("PAYMENT_REFUNDED", orderNumber));
+        mockMvc.perform(get(ORDERS_URL + "/" + orderNumber).header(HttpHeaders.AUTHORIZATION, customerAuth))
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.data.timeline.length()").value(4))
+                .andExpect(jsonPath("$.data.timeline[3].note").value("Refund of 1800.00 INR completed"));
+
+        List<ConsumerRecord<String, String>> events = awaitEvents(orderId(orderNumber).toString(), 3);
+        assertThat(events).extracting(r -> eventType(r.value()))
+                .containsExactly("ORDER_PLACED", "ORDER_CONFIRMED", "ORDER_CANCELLED");
+    }
+
+    @Test
+    void paymentAfterTheOrderWasCancelled_isIgnored() throws Exception {
+        UUID phone = stub.product("PHONE", "1000.00", "900.00", 10);
+        String orderNumber = placeOrder(customerAuth, phone, 1);
+        customerCancel(customerAuth, orderNumber, null).andExpect(status().isOk());
+
+        pay(orderNumber); // payment-service refunds it when it sees ORDER_CANCELLED
+
+        assertThat(orderStatus(orderNumber)).isEqualTo("CANCELLED");
+        assertThat(stub.reservation(orderNumber).status).isEqualTo("RELEASED");
     }
 
     @Test
@@ -190,7 +230,7 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         UUID phone = stub.product("PHONE", "1000.00", "900.00", 10);
         String unpaid = placeOrder(customerAuth, phone, 2);
         String paid = placeOrder(customerAuth, phone, 1);
-        admin(paid, "confirm-payment").andExpect(status().isOk());
+        pay(paid);
 
         clock.advance(Duration.ofMinutes(29));
         assertThat(expiryJob.expireUnpaidOrders()).isZero();

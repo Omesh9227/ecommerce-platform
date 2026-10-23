@@ -9,6 +9,7 @@ import com.ecommerce.orderservice.entity.CustomerOrder;
 import com.ecommerce.orderservice.entity.OrderStatus;
 import com.ecommerce.orderservice.exception.ConflictException;
 import com.ecommerce.orderservice.repository.CustomerOrderRepository;
+import com.ecommerce.orderservice.repository.OrderStatusHistoryRepository;
 import com.ecommerce.orderservice.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class OrderLifecycleService {
     static final String STUCK_REASON = "Checkout could not be completed. Please try again.";
 
     private final CustomerOrderRepository orderRepository;
+    private final OrderStatusHistoryRepository historyRepository;
     private final OrderTransitions transitions;
     private final InventoryClient inventoryClient;
     private final OrderQueryService queryService;
@@ -46,36 +48,25 @@ public class OrderLifecycleService {
     public OrderResponse cancel(String orderNumber, AuthenticatedUser caller, String reason) {
         CustomerOrder order = lockVisible(orderNumber, caller);
         if (order.getStatus() != OrderStatus.CANCELLED) {
-            requireMove(order, OrderStatus.CANCELLED, order.getStatus() == OrderStatus.CONFIRMED
-                    ? " (paid orders can be cancelled once refunds arrive with payment-service)" : "");
-            releaseStock(order);
+            requireMove(order, OrderStatus.CANCELLED, order.getStatus() == OrderStatus.SHIPPED
+                    ? " (it is already on its way)" : "");
+            boolean paid = order.getStatus() == OrderStatus.CONFIRMED;
+            if (paid) {
+                returnStock(order);   // sold units go back on hand; payment-service refunds on ORDER_CANCELLED
+            } else {
+                releaseStock(order);
+            }
             String note = reason != null && !reason.isBlank() ? reason.trim()
                     : caller.isAdmin() && !order.getUserId().equals(caller.id()) ? "Cancelled by admin" : "Cancelled by customer";
+            if (paid) {
+                note += " - a full refund has been requested";
+            }
             transitions.apply(order, OrderStatus.CANCELLED, caller.id(), note, clock.instant());
         }
         return queryService.toResponse(order, caller.isAdmin());
     }
 
     // ---------- Admin ----------
-
-    /**
-     * PENDING_PAYMENT -> CONFIRMED and the reserved stock becomes a sale.
-     * Temporary manual step: payment-service (next phase) will do this when a payment succeeds.
-     */
-    @Transactional
-    public OrderResponse confirmPayment(String orderNumber, AuthenticatedUser admin) {
-        CustomerOrder order = lockVisible(orderNumber, admin);
-        if (order.getStatus() != OrderStatus.CONFIRMED) {
-            requireMove(order, OrderStatus.CONFIRMED, "");
-            try {
-                inventoryClient.confirm(order.getOrderNumber());
-            } catch (DownstreamRejectedException ex) {
-                throw new ConflictException("Stock for order " + orderNumber + " can't be confirmed: " + ex.getMessage());
-            }
-            transitions.apply(order, OrderStatus.CONFIRMED, admin.id(), "Payment confirmed manually by admin", clock.instant());
-        }
-        return queryService.toResponse(order, true);
-    }
 
     @Transactional
     public OrderResponse ship(String orderNumber, AuthenticatedUser admin, ShipOrderRequest request) {
@@ -100,6 +91,48 @@ public class OrderLifecycleService {
             transitions.apply(order, OrderStatus.DELIVERED, admin.id(), "Delivered", clock.instant());
         }
         return queryService.toResponse(order, true);
+    }
+
+    // ---------- System: payment-service events ----------
+
+    /**
+     * PAYMENT_SUCCEEDED: PENDING_PAYMENT -> CONFIRMED, and the reserved stock becomes a sale.
+     * Safe to receive twice. If the order was cancelled meanwhile (payment window ended just as the customer paid),
+     * nothing happens here: payment-service sees the ORDER_CANCELLED event and refunds the payment.
+     *
+     * @return true if the order was confirmed now
+     */
+    @Transactional
+    public boolean markPaid(UUID orderId, String note) {
+        CustomerOrder order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+        if (order == null) {
+            log.warn("PAYMENT_SUCCEEDED for unknown order {}", orderId);
+            return false;
+        }
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            log.info("Order {} is {}; payment confirmation ignored", order.getOrderNumber(), order.getStatus());
+            return false;
+        }
+        try {
+            inventoryClient.confirm(order.getOrderNumber());
+        } catch (DownstreamRejectedException ex) {
+            // Should not happen (the reservation lives as long as the order waits for payment). Retried, then dead-lettered.
+            throw new IllegalStateException("Stock for paid order " + order.getOrderNumber() + " can't be confirmed: " + ex.getMessage());
+        }
+        transitions.apply(order, OrderStatus.CONFIRMED, null, note, clock.instant());
+        return true;
+    }
+
+    /** PAYMENT_REFUNDED: adds the refund to the cancelled order's timeline (once). */
+    @Transactional
+    public void recordRefund(UUID orderId, String note) {
+        orderRepository.findByIdForUpdate(orderId).ifPresent(order -> {
+            boolean alreadyRecorded = historyRepository.findByOrderIdOrderByChangedAtAsc(orderId).stream()
+                    .anyMatch(h -> note.equals(h.getNote()));
+            if (!alreadyRecorded) {
+                transitions.note(order, null, note, clock.instant());
+            }
+        });
     }
 
     // ---------- System (OrderExpiryJob) ----------
@@ -144,6 +177,15 @@ public class OrderLifecycleService {
         if (!order.getStatus().canMoveTo(next)) {
             throw new ConflictException("Order " + order.getOrderNumber() + " is " + order.getStatus()
                     + " and can't be moved to " + next + hint);
+        }
+    }
+
+    /** Puts a paid order's sold units back on hand. */
+    private void returnStock(CustomerOrder order) {
+        try {
+            inventoryClient.returnStock(order.getOrderNumber());
+        } catch (DownstreamRejectedException ex) {
+            throw new ConflictException("Stock for order " + order.getOrderNumber() + " can't be returned: " + ex.getMessage());
         }
     }
 
