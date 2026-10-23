@@ -37,7 +37,7 @@ No real money moves. `SimulatedPaymentGateway` behaves like Stripe's test mode:
 | UPI `fail@bank` (starts with "fail") | 402 declined |
 
 A real provider (Razorpay / Stripe) is a new implementation of the `PaymentGateway` interface, selected with
-`app.payment.gateway`; nothing else changes.
+`app.payment.gateway` (in `config-repo/payment-service.properties`); nothing else changes.
 
 ## APIs
 

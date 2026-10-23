@@ -15,7 +15,7 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Turns every gateway-level failure into the standard JSON error:
- * - downstream service not running       → 503
+ * - downstream service not running       → 503 (also: no instance registered in Eureka)
  * - downstream too slow                  → 504
  * - no route for the path                → 404
  * - anything unexpected                  → 500 (details logged, never returned)

@@ -54,7 +54,7 @@ Each item: `eventType, orderNumber, channel (EMAIL), recipient, subject, status 
 
 Configuration from the root `.env`: `POSTGRES_PASSWORD`, `JWT_SECRET`. Optional: `NOTIFICATION_SERVICE_DB_NAME`,
 `MAIL_HOST` (default `localhost`), `MAIL_PORT` (default `1025`), `KAFKA_BOOTSTRAP_SERVERS`.
-Sender, store name and support address are `app.notification.*` in `application.properties`.
+Sender, store name and support address are `app.notification.*` in `config-repo/notification-service.properties`.
 
 For a real provider later (Amazon SES, SendGrid, Gmail SMTP), only `spring.mail.*` changes (host, port, username,
 password, `spring.mail.properties.mail.smtp.starttls.enable=true`); the code stays the same.

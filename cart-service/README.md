@@ -54,8 +54,8 @@ All endpoints except DELETE /cart return the whole cart:
 |----------------------------------------------------|-------|
 | Product must exist and be ACTIVE                   | 404   |
 | Product must be in stock; total can't exceed stock | 409   |
-| At most 10 units per product (`app.cart.max-quantity-per-item`) | 400 |
-| At most 50 different products (`app.cart.max-items`) | 400 |
+| At most 10 units per product (`app.cart.max-quantity-per-item` in `config-repo/cart-service.properties`) | 400 |
+| At most 50 different products (`app.cart.max-items`, same file) | 400 |
 | Adding needs product-service                       | 503 if it's down |
 | Lowering a quantity is always allowed, even for an item that sold out | — |
 
@@ -70,7 +70,8 @@ lock stock away from other shoppers.
 3. Check http://localhost:8084/actuator/health (includes Redis) and Swagger at http://localhost:8084/swagger-ui.html
 
 Configuration comes from the root `.env`: `JWT_SECRET`. Optional: `REDIS_HOST` (default `localhost`),
-`REDIS_PORT` (default `6379`), `PRODUCT_SERVICE_URL` (default `http://localhost:8082`).
+`REDIS_PORT` (default `6379`). product-service is found through Eureka (`lb://product-service`); to bypass it set
+`PRODUCT_SERVICE_URL=http://localhost:8082`. Cart rules are in `config-repo/cart-service.properties`.
 
 ### Look inside Redis
 
