@@ -38,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -76,6 +77,21 @@ public class ProductController {
         ProductSearchCriteria criteria = new ProductSearchCriteria(search, categoryId, brand, minPrice, maxPrice, status, inStock);
         return ResponseEntity.ok(ApiResult.of("Products fetched successfully",
                 productService.search(criteria, pageable, AuthenticatedUser.isAdmin(currentUser))));
+    }
+
+    @Operation(summary = "Look up several products at once",
+            description = "Returns the ACTIVE products among the given ids (max 50); unknown or hidden ids are left out. "
+                    + "Used by cart-service to refresh prices and stock in one call.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Products found (possibly fewer than requested)"),
+            @ApiResponse(responseCode = "400", description = "No ids, more than 50, or an invalid id",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/lookup")
+    public ResponseEntity<ApiResult<List<ProductResponse>>> lookup(
+            @Parameter(description = "Comma-separated product ids", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+            @RequestParam(name = "ids") List<UUID> ids) {
+        return ResponseEntity.ok(ApiResult.of("Products fetched successfully", productService.lookup(ids)));
     }
 
     @Operation(summary = "Get a product by id", description = "Customers get 404 for products that are not ACTIVE.")

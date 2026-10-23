@@ -27,6 +27,7 @@ product-service ◄── inventory-events ── Kafka ◄── inventory-serv
 | POST   | `/api/v1/products`           | ADMIN  | SKU unique (stored upper-case)                              |
 | PUT    | `/api/v1/products/{id}`      | ADMIN  | Replaces all fields; status kept if omitted                 |
 | DELETE | `/api/v1/products/{id}`      | ADMIN  | Soft delete → status `DISCONTINUED`                         |
+| GET    | `/api/v1/products/lookup?ids=a,b,c` | public | Up to 50 ids in one call; returns only the ACTIVE ones (used by cart-service) |
 
 ### Search and filters (`GET /api/v1/products`)
 

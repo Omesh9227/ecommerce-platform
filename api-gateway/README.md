@@ -5,7 +5,8 @@ Single entry point for all clients on **port 8080**. Built on Spring Cloud Gatew
 ```
 Postman / frontend ──► api-gateway :8080 ──► user-service :8081
                                           ├──► product-service :8082
-                                          └──► inventory-service :8083
+                                          ├──► inventory-service :8083
+                                          └──► cart-service :8084
                          │
                          ├─ CORS (preflight answered here)
                          ├─ JWT check (signature, expiry, issuer)
@@ -25,12 +26,13 @@ Postman / frontend ──► api-gateway :8080 ──► user-service :8081
 | `/api/v1/products/**`   | product-service | GET public; POST/PUT/DELETE need ADMIN      |
 | `/api/v1/categories/**` | product-service | GET public; POST/PUT/DELETE need ADMIN      |
 | `/api/v1/inventory/**`  | inventory-service | valid JWT, ADMIN (every method)           |
+| `/api/v1/cart/**`       | cart-service    | valid JWT (any role); the cart is the caller's own |
 
 New services are added as routes in `config/GatewayRoutesConfig.java`.
 
 ## Run
 
-1. Start **user-service** (8081), **product-service** (8082) and **inventory-service** (8083) first.
+1. Start **user-service** (8081), **product-service** (8082), **inventory-service** (8083) and **cart-service** (8084) first.
 2. Start the gateway: run `ApiGatewayApplication` in IntelliJ, or `mvn spring-boot:run` from this folder.
 3. Check http://localhost:8080/actuator/health → `{"status":"UP"}`.
 4. Check routes: http://localhost:8080/actuator/gateway/routes
@@ -38,7 +40,7 @@ New services are added as routes in `config/GatewayRoutesConfig.java`.
 Configuration comes from the root `.env` (shared with user-service). The gateway needs only `JWT_SECRET`
 (same value as user-service). Optional: `USER_SERVICE_URL` (default `http://localhost:8081`),
 `PRODUCT_SERVICE_URL` (default `http://localhost:8082`), `INVENTORY_SERVICE_URL` (default `http://localhost:8083`),
-`CORS_ALLOWED_ORIGINS`.
+`CART_SERVICE_URL` (default `http://localhost:8084`), `CORS_ALLOWED_ORIGINS`.
 
 ## Test
 

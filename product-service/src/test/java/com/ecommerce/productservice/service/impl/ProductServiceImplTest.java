@@ -267,4 +267,35 @@ class ProductServiceImplTest {
         assertThat(page.totalElements()).isZero();
         verify(productRepository, never()).findAll(any(Specification.class), any(PageRequest.class));
     }
+
+    // ---------- lookup ----------
+
+    @Test
+    void lookup_returnsOnlyActiveProducts_andQueriesEachIdOnce() {
+        Product product = existingProduct(ProductStatus.ACTIVE);
+        UUID unknown = UUID.randomUUID();
+        when(productRepository.findAllByIdInAndStatus(Set.of(product.getId(), unknown), ProductStatus.ACTIVE))
+                .thenReturn(List.of(product));
+
+        List<ProductResponse> found = productService.lookup(List.of(product.getId(), unknown, product.getId()));
+
+        assertThat(found).extracting(ProductResponse::id).containsExactly(product.getId());
+    }
+
+    @Test
+    void lookup_noIds_isBadRequest() {
+        assertThatThrownBy(() -> productService.lookup(List.of()))
+                .isInstanceOf(BadRequestException.class);
+        verifyNoInteractions(productRepository);
+    }
+
+    @Test
+    void lookup_tooManyIds_isBadRequest() {
+        List<UUID> ids = java.util.stream.Stream.generate(UUID::randomUUID).limit(51).toList();
+
+        assertThatThrownBy(() -> productService.lookup(ids))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("At most 50");
+        verifyNoInteractions(productRepository);
+    }
 }
