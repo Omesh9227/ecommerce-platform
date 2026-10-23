@@ -133,7 +133,8 @@ second order, and finally shows that a stock drop blocks checkout.
 - **Service-to-service auth**: order-service signs its own 5-minute JWT with role `SERVICE`; inventory-service
   accepts that role only on reservation endpoints. Customers' requests to cart-service use the customer's own token.
 - **Transactional outbox** for `order-events` (key = order id, so one order's events stay in order); each event
-  carries `orderVersion` so consumers can ignore duplicates.
+  carries `orderVersion` so consumers can ignore duplicates. Read by payment-service and notification-service, so
+  events carry what emails need: the customer's email, items with names and prices, carrier/tracking once shipped.
 - **Consumes `payment-events`**: `PAYMENT_SUCCEEDED` confirms the order (if it's still waiting for payment - if it was
   cancelled meanwhile, payment-service refunds on its own), `PAYMENT_REFUNDED` adds a timeline entry. Failures retry
   with exponential back-off (~30 s), then go to `payment-events.DLT`.
