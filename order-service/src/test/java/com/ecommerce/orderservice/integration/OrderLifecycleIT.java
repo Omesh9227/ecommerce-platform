@@ -141,6 +141,10 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
                 .containsExactly("ORDER_PLACED", "ORDER_CONFIRMED", "ORDER_SHIPPED", "ORDER_DELIVERED");
         List<Long> versions = events.stream().map(r -> readVersion(r.value())).toList();
         assertThat(versions).isSorted().doesNotHaveDuplicates();
+        JsonNode shipped = readEvent(events.get(2).value());
+        assertThat(shipped.get("carrier").asText()).isEqualTo("Delhivery");
+        assertThat(shipped.get("trackingNumber").asText()).isEqualTo("DLV123");
+        assertThat(shipped.get("items").get(0).get("productName").asText()).isEqualTo("Product PHONE");
     }
 
     @Test
@@ -258,6 +262,14 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         assertThat(expiryJob.failStuckCheckouts()).isEqualTo(1);
 
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM orders", String.class)).isEqualTo("CHECKOUT_FAILED");
+    }
+
+    private JsonNode readEvent(String json) {
+        try {
+            return objectMapper.readTree(json);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private String eventType(String json) {
