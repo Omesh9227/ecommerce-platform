@@ -7,6 +7,8 @@ Docker/Docker Compose is added only after all services work locally.
 
 | Service         | Port | Database               | Status             |
 |-----------------|------|------------------------|--------------------|
+| discovery-server | 8761 | — (Eureka registry)   | Phase 8 — complete |
+| config-server   | 8888 | — (serves `config-repo/`) | Phase 8 — complete |
 | api-gateway     | 8080 | —                      | Phase 1 — complete |
 | user-service    | 8081 | `ecommerce_user_db`    | Phase 1 — complete |
 | product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete; Kafka events in Phase 3 |
@@ -17,8 +19,30 @@ Docker/Docker Compose is added only after all services work locally.
 | notification-service | 8087 | `ecommerce_notification_db` | Phase 7 — complete (emails via Mailpit locally) |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka + Redis + Mailpit → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
+
+Still to come before Docker: wishlist, review, shipping, search, recommendation and admin services, then
+Prometheus + Grafana. Docker, Kubernetes, Jenkins and GCP follow once every service runs locally.
+
+## Service discovery and configuration (Phase 8)
+
+```
+                 discovery-server :8761 (Eureka)        config-server :8888 ──reads── config-repo/*.properties
+                  ▲ register / look up                    │ settings at startup
+                  │                                       ▼
+Postman ──► api-gateway :8080 ── lb://order-service ──► order-service ── lb://inventory-service ──► ...
+```
+
+- **Eureka** (`discovery-server`): every service registers itself; the gateway, cart-service and order-service find
+  each other by **name** (`lb://order-service`) instead of fixed `localhost:8085` URLs. Dashboard:
+  http://localhost:8761.
+- **Config Server** (`config-server`): business settings (shipping fee, payment window, cart limits, email sender...)
+  live in [`config-repo/`](config-repo) - change one, restart that service, no rebuild. Technical settings stay
+  in each service's `application.properties`; secrets stay in `.env`.
+- Both need a login, from `.env`: `EUREKA_USERNAME/PASSWORD`, `CONFIG_SERVER_USERNAME/PASSWORD`.
+- Start them **before** the services: a service refuses to start without its configuration.
+- Tests use neither (test profile), so `mvn verify` still needs no running services.
 
 ## Local prerequisites
 
@@ -27,6 +51,7 @@ Each service has its own README with APIs, run/test steps and a Postman collecti
 - PostgreSQL on `localhost:5432` (pgAdmin for inspecting data)
 - Kafka on `localhost:9092` (below)
 - Redis on `localhost:6379` (below)
+- discovery-server (8761) and config-server (8888) from this repository, started first
 - Mailpit on `localhost:1025` / inbox http://localhost:8025 (below)
 - Postman
 
@@ -114,6 +139,10 @@ POSTGRES_PASSWORD=your-postgres-password
 JWT_SECRET=base64-key-from-openssl-rand-base64-48
 ADMIN_EMAIL=admin@ecommerce.com
 ADMIN_PASSWORD=Admin@12345
+EUREKA_USERNAME=eureka
+EUREKA_PASSWORD=letters-and-digits-from-openssl-rand-hex-16
+CONFIG_SERVER_USERNAME=config
+CONFIG_SERVER_PASSWORD=letters-and-digits-from-openssl-rand-hex-16
 ```
 
 After a fresh clone: `cp .env.example .env` and fill it in. Format is plain `KEY=VALUE`: no quotes,

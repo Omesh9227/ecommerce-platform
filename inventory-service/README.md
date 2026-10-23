@@ -23,7 +23,7 @@ Postman ──► api-gateway :8080 ──► inventory-service :8083 ──► 
 | `quantityOnHand`   | Physically in the warehouse                                        |
 | `quantityReserved` | Held for orders that are not confirmed yet                         |
 | `availableQuantity`| `onHand − reserved` — what can still be sold                       |
-| `lowStockThreshold`| Default 5. `lowStock` is true when available ≤ threshold           |
+| `lowStockThreshold`| Default 5 (`config-repo/inventory-service.properties`). `lowStock` is true when available ≤ threshold |
 
 Reservation lifecycle:
 

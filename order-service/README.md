@@ -83,7 +83,8 @@ Content-Type: application/json
 | 503 | cart-, product- or inventory-service is down: retry with the **same** key |
 
 Pricing: prices come from product-service at checkout (not from the cart), then never change for that order.
-Shipping is ₹40, free from ₹499 (`app.order.shipping-fee`, `app.order.free-shipping-threshold`).
+Shipping is ₹40, free from ₹499 (`app.order.shipping-fee`, `app.order.free-shipping-threshold` in
+`config-repo/order-service.properties`, with the payment window and expiry timings).
 
 ## Run
 
@@ -97,7 +98,8 @@ Shipping is ₹40, free from ₹499 (`app.order.shipping-fee`, `app.order.free-s
 3. Check http://localhost:8085/actuator/health and Swagger at http://localhost:8085/swagger-ui.html
 
 Configuration from the root `.env`: `POSTGRES_PASSWORD`, `JWT_SECRET`. Optional: `ORDER_SERVICE_DB_NAME`,
-`CART_SERVICE_URL`, `PRODUCT_SERVICE_URL`, `INVENTORY_SERVICE_URL`, `KAFKA_BOOTSTRAP_SERVERS`.
+`KAFKA_BOOTSTRAP_SERVERS`. cart-, product- and inventory-service are found through Eureka (`lb://cart-service` ...);
+to bypass it for one, set e.g. `INVENTORY_SERVICE_URL=http://localhost:8083`.
 
 Watch order events: `kafka-console-consumer --bootstrap-server localhost:9092 --topic order-events --from-beginning --property print.key=true`
 

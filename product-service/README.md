@@ -48,7 +48,7 @@ product-service ◄── inventory-events ── Kafka ◄── inventory-serv
 - `price` is the list price (MRP); `discountPercent` is 0 to below 100.
 - `sellingPrice = price × (100 − discount) / 100`, rounded half-up to 2 decimals, calculated by the service
   (clients never send it). Example: 999.00 at 15% → 849.15.
-- All prices are in INR (`app.catalog.currency`).
+- All prices are in INR (`app.catalog.currency` in `config-repo/product-service.properties`, from `shop.currency`).
 
 ### Product status
 
