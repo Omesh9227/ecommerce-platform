@@ -28,6 +28,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -84,6 +86,21 @@ public class ProductServiceImpl implements ProductService {
             throw new ResourceNotFoundException(PRODUCT, id);
         }
         return productMapper.toResponse(product);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductResponse> lookup(Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BadRequestException("At least one product id is required");
+        }
+        Set<UUID> distinctIds = new LinkedHashSet<>(ids);
+        if (distinctIds.size() > LOOKUP_MAX_IDS) {
+            throw new BadRequestException("At most " + LOOKUP_MAX_IDS + " product ids per lookup");
+        }
+        return productRepository.findAllByIdInAndStatus(distinctIds, ProductStatus.ACTIVE).stream()
+                .map(productMapper::toResponse)
+                .toList();
     }
 
     // ---------- Write ----------
