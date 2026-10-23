@@ -34,6 +34,7 @@ class GatewayRoutingTest {
         registry.add("services.user-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         // The same stub stands in for product-service; it echoes the path, so tests can tell which route was used
         registry.add("services.product-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.inventory-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -293,6 +294,48 @@ class GatewayRoutingTest {
                 .jsonPath("$.method").isEqualTo("POST")
                 .jsonPath("$.role").isEqualTo("ADMIN")
                 .jsonPath("$.userId").isEqualTo(adminId.toString());
+    }
+
+    // ---------- Inventory (inventory-service, ADMIN only) ----------
+
+    @Test
+    void inventory_withoutToken_returns401() {
+        webTestClient.get().uri("/api/v1/inventory")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void inventory_asCustomer_returns403_evenForGet() {
+        webTestClient.get().uri("/api/v1/inventory/" + UUID.randomUUID())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void inventory_asAdmin_isForwardedToInventoryService() {
+        webTestClient.get().uri("/api/v1/inventory?lowStock=true")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/inventory")
+                .jsonPath("$.role").isEqualTo("ADMIN")
+                .jsonPath("$.userId").isEqualTo(adminId.toString());
+    }
+
+    @Test
+    void reservation_asAdmin_isForwardedToInventoryService() {
+        webTestClient.post().uri("/api/v1/inventory/reservations")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/inventory/reservations")
+                .jsonPath("$.method").isEqualTo("POST");
     }
 
     // ---------- Routing / errors ----------

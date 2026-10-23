@@ -9,10 +9,11 @@ Docker/Docker Compose is added only after all services work locally.
 |-----------------|------|------------------------|--------------------|
 | api-gateway     | 8080 | —                      | Phase 1 — complete |
 | user-service    | 8081 | `ecommerce_user_db`    | Phase 1 — complete |
-| product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete |
+| product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete; Kafka events in Phase 3 |
+| inventory-service | 8083 | `ecommerce_inventory_db` | Phase 3 — complete |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL → user-service → product-service → api-gateway.
+Start order: PostgreSQL + Kafka → user-service → product-service → inventory-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
 ## Local prerequisites
@@ -20,7 +21,34 @@ Each service has its own README with APIs, run/test steps and a Postman collecti
 - Java 21
 - Maven 3.9+ (`brew install maven`) or IntelliJ's bundled Maven
 - PostgreSQL on `localhost:5432` (pgAdmin for inspecting data)
+- Kafka on `localhost:9092` (below)
 - Postman
+
+## Kafka (local, no Docker)
+
+product-service and inventory-service exchange events through Kafka. Homebrew's Kafka runs in KRaft mode
+(no ZooKeeper) and is ready to use after install:
+
+```bash
+brew install kafka
+brew services start kafka                     # starts now and at every login; stop: brew services stop kafka
+
+kafka-topics --bootstrap-server localhost:9092 --list    # check it's up (topics appear once services start)
+```
+
+Watch events live while you use Postman (one terminal per topic):
+
+```bash
+kafka-console-consumer --bootstrap-server localhost:9092 --topic product-events   --from-beginning --property print.key=true
+kafka-console-consumer --bootstrap-server localhost:9092 --topic inventory-events --from-beginning --property print.key=true
+```
+
+Topics (created by the services on startup, 3 partitions, key = productId so each product's events stay in order):
+`product-events`, `inventory-events`, and dead-letter topics `product-events.DLT`, `inventory-events.DLT` for
+messages that could not be processed. If Kafka is stopped, the services keep working: events wait in each
+service's `outbox_events` table and are sent when Kafka is back.
+
+Integration tests start their own in-memory Kafka, so `mvn verify` doesn't need Kafka running.
 
 ---
 

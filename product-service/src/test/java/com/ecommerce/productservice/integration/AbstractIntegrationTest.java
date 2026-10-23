@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -25,12 +26,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Full application context + real PostgreSQL (ecommerce_product_test_db) + the real security filter chain.
+ * Full application context + real PostgreSQL (ecommerce_product_test_db) + the real security filter chain
+ * + an in-memory Kafka broker (no local Kafka needed).
  * Tokens are signed with the test key, exactly as user-service would sign them.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@EmbeddedKafka(partitions = 1, topics = {"product-events", "inventory-events"},
+        bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 public abstract class AbstractIntegrationTest {
 
     protected static final String PRODUCTS_URL = "/api/v1/products";
@@ -48,7 +52,7 @@ public abstract class AbstractIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.execute("TRUNCATE TABLE product_images, products, categories");
+        jdbcTemplate.execute("TRUNCATE TABLE product_images, products, categories, outbox_events");
     }
 
     protected String adminAuth() {

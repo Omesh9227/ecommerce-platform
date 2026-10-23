@@ -1,0 +1,20 @@
+package com.ecommerce.inventoryservice.event;
+
+/**
+ * Event type names on the wire. Strings rather than an enum, so an unknown future event type
+ * is simply ignored by consumers instead of failing deserialisation.
+ */
+public final class EventTypes {
+
+    // Published by product-service on the product-events topic
+    public static final String PRODUCT_CREATED = "PRODUCT_CREATED";
+    public static final String PRODUCT_UPDATED = "PRODUCT_UPDATED";
+    public static final String PRODUCT_DISCONTINUED = "PRODUCT_DISCONTINUED";
+
+    // Published by inventory-service on the inventory-events topic
+    public static final String INVENTORY_UPDATED = "INVENTORY_UPDATED";
+    public static final String INVENTORY_LOW = "INVENTORY_LOW";
+
+    private EventTypes() {
+    }
+}

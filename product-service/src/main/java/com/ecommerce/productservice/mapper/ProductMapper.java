@@ -31,6 +31,8 @@ public class ProductMapper {
                 product.getSellingPrice(),
                 catalogProperties.currency(),
                 product.getStatus(),
+                product.getAvailableQuantity(),
+                product.getAvailableQuantity() > 0,
                 List.copyOf(product.getImageUrls()),
                 product.getCreatedAt(),
                 product.getUpdatedAt()

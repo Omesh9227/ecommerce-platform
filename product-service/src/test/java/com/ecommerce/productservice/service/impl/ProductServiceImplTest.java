@@ -12,6 +12,7 @@ import com.ecommerce.productservice.exception.BadRequestException;
 import com.ecommerce.productservice.exception.ConflictException;
 import com.ecommerce.productservice.exception.ResourceNotFoundException;
 import com.ecommerce.productservice.mapper.ProductMapper;
+import com.ecommerce.productservice.outbox.ProductEventPublisher;
 import com.ecommerce.productservice.repository.CategoryRepository;
 import com.ecommerce.productservice.repository.ProductRepository;
 import com.ecommerce.productservice.service.CategoryService;
@@ -49,6 +50,8 @@ class ProductServiceImplTest {
     private CategoryRepository categoryRepository;
     @Mock
     private CategoryService categoryService;
+    @Mock
+    private ProductEventPublisher eventPublisher;
 
     private ProductServiceImpl productService;
 
@@ -58,7 +61,7 @@ class ProductServiceImplTest {
     @BeforeEach
     void setUp() {
         productService = new ProductServiceImpl(productRepository, categoryRepository, categoryService,
-                new ProductMapper(new CatalogProperties("INR")));
+                new ProductMapper(new CatalogProperties("INR")), eventPublisher);
         mobiles = Category.builder().id(UUID.randomUUID()).name("Mobiles").build();
     }
 
@@ -113,6 +116,9 @@ class ProductServiceImplTest {
         assertThat(response.currency()).isEqualTo("INR");
         assertThat(response.category().name()).isEqualTo("Mobiles");
         assertThat(response.imageUrls()).containsExactly("https://cdn.example.com/iphone.jpg");
+        assertThat(response.availableQuantity()).isZero();
+        assertThat(response.inStock()).isFalse();
+        verify(eventPublisher).productCreated(saved);
     }
 
     @Test
@@ -123,6 +129,7 @@ class ProductServiceImplTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("IPHONE-15");
         verify(productRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -180,6 +187,7 @@ class ProductServiceImplTest {
         assertThat(response.status()).isEqualTo(ProductStatus.INACTIVE);
         assertThat(response.sellingPrice()).isEqualByComparingTo("849.15");
         assertThat(product.getUpdatedBy()).isEqualTo(adminId);
+        verify(eventPublisher).productUpdated(product);
     }
 
     // ---------- Delete ----------
@@ -188,12 +196,14 @@ class ProductServiceImplTest {
     void delete_marksProductDiscontinued() {
         Product product = existingProduct(ProductStatus.ACTIVE);
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.saveAndFlush(product)).thenReturn(product);
 
         productService.delete(product.getId(), adminId);
 
         assertThat(product.getStatus()).isEqualTo(ProductStatus.DISCONTINUED);
         assertThat(product.getUpdatedBy()).isEqualTo(adminId);
         verify(productRepository).saveAndFlush(product);
+        verify(eventPublisher).productDiscontinued(product);
     }
 
     @Test
@@ -204,6 +214,7 @@ class ProductServiceImplTest {
         productService.delete(product.getId(), adminId);
 
         verify(productRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     // ---------- Read ----------
@@ -227,7 +238,7 @@ class ProductServiceImplTest {
 
     @Test
     void search_invalidSortField_throwsBadRequest() {
-        ProductSearchCriteria criteria = new ProductSearchCriteria(null, null, null, null, null, null);
+        ProductSearchCriteria criteria = new ProductSearchCriteria(null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> productService.search(criteria, PageRequest.of(0, 20, Sort.by("createdBy")), false))
                 .isInstanceOf(BadRequestException.class)
@@ -238,7 +249,7 @@ class ProductServiceImplTest {
     @Test
     void search_minGreaterThanMax_throwsBadRequest() {
         ProductSearchCriteria criteria = new ProductSearchCriteria(null, null, null,
-                new BigDecimal("500"), new BigDecimal("100"), null);
+                new BigDecimal("500"), new BigDecimal("100"), null, null);
 
         assertThatThrownBy(() -> productService.search(criteria, PageRequest.of(0, 20), false))
                 .isInstanceOf(BadRequestException.class);
@@ -249,7 +260,7 @@ class ProductServiceImplTest {
     void search_unknownCategory_returnsEmptyPageWithoutQuerying() {
         UUID unknown = UUID.randomUUID();
         when(categoryService.getSelfAndDescendantIds(unknown)).thenReturn(Set.of());
-        ProductSearchCriteria criteria = new ProductSearchCriteria(null, unknown, null, null, null, null);
+        ProductSearchCriteria criteria = new ProductSearchCriteria(null, unknown, null, null, null, null, null);
 
         PageResponse<ProductResponse> page = productService.search(criteria, PageRequest.of(0, 20), false);
 

@@ -11,6 +11,7 @@ import com.ecommerce.productservice.exception.BadRequestException;
 import com.ecommerce.productservice.exception.ConflictException;
 import com.ecommerce.productservice.exception.ResourceNotFoundException;
 import com.ecommerce.productservice.mapper.ProductMapper;
+import com.ecommerce.productservice.outbox.ProductEventPublisher;
 import com.ecommerce.productservice.repository.CategoryRepository;
 import com.ecommerce.productservice.repository.ProductRepository;
 import com.ecommerce.productservice.repository.ProductSpecifications;
@@ -40,12 +41,13 @@ public class ProductServiceImpl implements ProductService {
     private static final String PRODUCT = "Product";
 
     /** Only these fields can be used in ?sort=... (anything else is a 400, not a 500). */
-    static final Set<String> SORTABLE_FIELDS = Set.of("name", "brand", "price", "sellingPrice", "createdAt", "updatedAt");
+    static final Set<String> SORTABLE_FIELDS = Set.of("name", "brand", "price", "sellingPrice", "availableQuantity", "createdAt", "updatedAt");
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final CategoryService categoryService;
     private final ProductMapper productMapper;
+    private final ProductEventPublisher eventPublisher;
 
     // ---------- Read ----------
 
@@ -67,7 +69,7 @@ public class ProductServiceImpl implements ProductService {
         ProductStatus status = admin ? criteria.status() : ProductStatus.ACTIVE;
         Page<Product> page = productRepository.findAll(
                 ProductSpecifications.withFilters(status, categoryIds, criteria.brand(), criteria.search(),
-                        criteria.minPrice(), criteria.maxPrice()),
+                        criteria.minPrice(), criteria.maxPrice(), criteria.inStock()),
                 pageable);
 
         return PageResponse.from(page.map(productMapper::toResponse));
@@ -102,6 +104,7 @@ public class ProductServiceImpl implements ProductService {
         product.setUpdatedBy(actorId);
 
         Product saved = saveAndFlush(product);
+        eventPublisher.productCreated(saved);
         log.info("Product created id={} sku={} by={}", saved.getId(), sku, actorId);
         return productMapper.toResponse(saved);
     }
@@ -124,6 +127,7 @@ public class ProductServiceImpl implements ProductService {
         product.setUpdatedBy(actorId);
 
         Product saved = saveAndFlush(product);
+        eventPublisher.productUpdated(saved);
         log.info("Product updated id={} by={}", id, actorId);
         return productMapper.toResponse(saved);
     }
@@ -137,7 +141,8 @@ public class ProductServiceImpl implements ProductService {
         }
         product.setStatus(ProductStatus.DISCONTINUED);
         product.setUpdatedBy(actorId);
-        productRepository.saveAndFlush(product);
+        Product saved = productRepository.saveAndFlush(product);
+        eventPublisher.productDiscontinued(saved);
         log.info("Product discontinued id={} by={}", id, actorId);
     }
 

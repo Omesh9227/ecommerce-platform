@@ -8,6 +8,9 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
                         │
                         ├─ GET /api/v1/products/**, /api/v1/categories/**   → public
                         └─ POST / PUT / DELETE on those paths              → ADMIN only
+
+product-service ── product-events ──► Kafka ──► inventory-service
+product-service ◄── inventory-events ── Kafka ◄── inventory-service   (availableQuantity / inStock)
 ```
 
 ## APIs
@@ -35,8 +38,9 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
 | `minPrice`   | `10000`                     | Selling price ≥ (after discount)                     |
 | `maxPrice`   | `80000`                     | Selling price ≤                                      |
 | `status`     | `INACTIVE`                  | ADMIN only; customers always get `ACTIVE`            |
+| `inStock`    | `true`                      | Only products with stock available (`false` = sold out) |
 | `page/size`  | `page=0&size=20`            | Max size 100                                         |
-| `sort`       | `sellingPrice,asc`          | `name, brand, price, sellingPrice, createdAt, updatedAt` |
+| `sort`       | `sellingPrice,asc`          | `name, brand, price, sellingPrice, availableQuantity, createdAt, updatedAt` |
 
 ### Pricing
 
@@ -53,8 +57,18 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
 | `INACTIVE`     | no (404)         | Temporarily hidden                       |
 | `DISCONTINUED` | no (404)         | Deleted (soft) — kept for future orders |
 
+### Events (Kafka)
+
+| Topic              | Direction | Events                                                     |
+|--------------------|-----------|------------------------------------------------------------|
+| `product-events`   | publishes | `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DISCONTINUED` (key = productId) |
+| `inventory-events` | consumes  | `INVENTORY_UPDATED` → sets `availableQuantity` / `inStock` on the product |
+
+Products start with `availableQuantity: 0`, `inStock: false` until inventory-service reports stock.
+
 ## Run
 
+0. Kafka must be running (see the root README: `brew services start kafka`).
 1. In pgAdmin, create the databases once:
    ```sql
    CREATE DATABASE ecommerce_product_db;
@@ -64,13 +78,16 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
 3. Check http://localhost:8082/actuator/health and Swagger at http://localhost:8082/swagger-ui.html
 
 Configuration comes from the root `.env`: `POSTGRES_PASSWORD`, `JWT_SECRET` (same as user-service). Optional:
-`PRODUCT_SERVICE_DB_NAME` (default `ecommerce_product_db`).
+`PRODUCT_SERVICE_DB_NAME` (default `ecommerce_product_db`), `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:9092`).
+
+If Kafka is down, product changes still work: events wait in the `outbox_events` table and are sent when Kafka is back.
 
 ## Test
 
 ```bash
 mvn test     # unit tests, no database needed
 mvn verify   # + integration tests against ecommerce_product_test_db (wiped before each test)
+             #   and an in-memory Kafka started by the tests (no local Kafka needed)
 ```
 
 ## Postman
@@ -89,4 +106,8 @@ soft delete. Every run uses a unique tag, so it can be re-run any time.
 - **Search escaping**: `%` and `_` in search text are matched literally.
 - **Concurrency**: duplicate SKUs / category names are also blocked by unique indexes; `version` columns give
   optimistic locking.
-- **Stock / availability** arrives with inventory-service (Phase 4); image upload comes later (URLs for now).
+- **Transactional outbox**: a product change and its event are saved in one transaction (`outbox_events`), and a
+  background relay sends events to Kafka — no event is lost if Kafka is down, and none is sent for a rolled-back change.
+- **Availability is a read copy**: `availableQuantity` is only written by the `INVENTORY_UPDATED` consumer, which
+  ignores events older than the one it already applied (`inventoryVersion`).
+- Image upload comes later (URLs for now).
