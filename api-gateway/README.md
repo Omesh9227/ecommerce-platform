@@ -12,12 +12,14 @@ Postman / frontend ──► api-gateway :8080 ──► user-service :8081
                                           ├──► order-service :8085
                                           ├──► payment-service :8086
                                           ├──► notification-service :8087
-                                          └──► wishlist-service :8088
+                                          ├──► wishlist-service :8088
+                                          └──► review-service :8089
                          │
                          ├─ CORS (preflight answered here)
                          ├─ JWT check (signature, expiry, issuer)
                          ├─ ADMIN role check for /api/v1/admin/**, /api/v1/inventory/**, /api/v1/orders/admin/**,
-                         │                   /api/v1/payments/admin/**, /api/v1/notifications/admin/**
+                         │                   /api/v1/payments/admin/**, /api/v1/notifications/admin/**,
+                         │                   /api/v1/reviews/admin/**
                          ├─ X-User-Id / X-User-Email / X-User-Role headers to services
                          ├─ X-Correlation-Id on every request and response
                          └─ JSON errors: 401, 403, 404, 503, 504
@@ -41,12 +43,15 @@ Postman / frontend ──► api-gateway :8080 ──► user-service :8081
 | `/api/v1/notifications/**` | notification-service | valid JWT; customers see only their own emails |
 | `/api/v1/notifications/admin/**` | notification-service | valid JWT, ADMIN              |
 | `/api/v1/wishlist/**`   | wishlist-service | valid JWT; always the caller's own wishlist |
+| `/api/v1/reviews/products/**` | review-service | GET public (reviews and rating summary); POST needs a JWT |
+| `/api/v1/reviews/**`    | review-service  | valid JWT; edit/delete only your own reviews |
+| `/api/v1/reviews/admin/**` | review-service | valid JWT, ADMIN                          |
 
 New services are added as routes in `config/GatewayRoutesConfig.java`.
 
 ## Run
 
-1. Start **discovery-server** (8761) and **config-server** (8888), then **user-service** (8081), **product-service** (8082), **inventory-service** (8083), **cart-service** (8084), **order-service** (8085), **payment-service** (8086), **notification-service** (8087) and **wishlist-service** (8088).
+1. Start **discovery-server** (8761) and **config-server** (8888), then **user-service** (8081), **product-service** (8082), **inventory-service** (8083), **cart-service** (8084), **order-service** (8085), **payment-service** (8086), **notification-service** (8087), **wishlist-service** (8088) and **review-service** (8089).
 2. Start the gateway: run `ApiGatewayApplication` in IntelliJ, or `mvn spring-boot:run` from this folder.
 3. Check http://localhost:8080/actuator/health → `{"status":"UP"}`.
 4. Check routes: http://localhost:8080/actuator/gateway/routes

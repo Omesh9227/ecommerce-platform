@@ -40,6 +40,7 @@ class GatewayRoutingTest {
         registry.add("services.payment-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.notification-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.wishlist-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.review-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -236,6 +237,42 @@ class GatewayRoutingTest {
                 .expectBody()
                 .jsonPath("$.path").isEqualTo("/api/v1/products")
                 .jsonPath("$.userId").doesNotExist();
+    }
+
+    @Test
+    void readingReviews_isPublic() {
+        webTestClient.get().uri("/api/v1/reviews/products/" + UUID.randomUUID() + "/summary")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.method").isEqualTo("GET")
+                .jsonPath("$.userId").doesNotExist();
+    }
+
+    @Test
+    void writingAReview_needsAToken() {
+        webTestClient.post().uri("/api/v1/reviews/products/" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"rating\":5,\"title\":\"Nice\"}")
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        webTestClient.post().uri("/api/v1/reviews/products/" + UUID.randomUUID())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"rating\":5,\"title\":\"Nice\"}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.userId").isEqualTo(customerId.toString());
+    }
+
+    @Test
+    void reviewModeration_asCustomer_returns403AtTheGateway() {
+        webTestClient.get().uri("/api/v1/reviews/admin")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
     }
 
     @Test

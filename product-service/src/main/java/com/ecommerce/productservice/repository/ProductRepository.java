@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -40,4 +41,21 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     int updateAvailability(@Param("productId") UUID productId,
                            @Param("availableQuantity") int availableQuantity,
                            @Param("inventoryVersion") long inventoryVersion);
+
+    /**
+     * Applies a rating from a PRODUCT_RATING_UPDATED event, only if it is newer than what we already have.
+     * Native SQL for the same reason as updateAvailability.
+     *
+     * @return 1 if applied, 0 if the product is unknown or the event is outdated
+     */
+    @Modifying
+    @Query(value = """
+            UPDATE products
+               SET average_rating = :averageRating, review_count = :reviewCount, rating_version = :ratingVersion
+             WHERE id = :productId AND rating_version < :ratingVersion
+            """, nativeQuery = true)
+    int updateRating(@Param("productId") UUID productId,
+                     @Param("averageRating") BigDecimal averageRating,
+                     @Param("reviewCount") int reviewCount,
+                     @Param("ratingVersion") long ratingVersion);
 }

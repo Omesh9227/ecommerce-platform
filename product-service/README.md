@@ -11,6 +11,7 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
 
 product-service ── product-events ──► Kafka ──► inventory-service, wishlist-service (price drops)
 product-service ◄── inventory-events ── Kafka ◄── inventory-service   (availableQuantity / inStock)
+product-service ◄── review-events ──── Kafka ◄── review-service      (averageRating / reviewCount)
 ```
 
 ## APIs
@@ -41,7 +42,7 @@ product-service ◄── inventory-events ── Kafka ◄── inventory-serv
 | `status`     | `INACTIVE`                  | ADMIN only; customers always get `ACTIVE`            |
 | `inStock`    | `true`                      | Only products with stock available (`false` = sold out) |
 | `page/size`  | `page=0&size=20`            | Max size 100                                         |
-| `sort`       | `sellingPrice,asc`          | `name, brand, price, sellingPrice, availableQuantity, createdAt, updatedAt` |
+| `sort`       | `sellingPrice,asc`          | `name, brand, price, sellingPrice, availableQuantity, averageRating, reviewCount, createdAt, updatedAt` |
 
 ### Pricing
 
@@ -64,8 +65,11 @@ product-service ◄── inventory-events ── Kafka ◄── inventory-serv
 |--------------------|-----------|------------------------------------------------------------|
 | `product-events`   | publishes | `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DISCONTINUED` (key = productId), with `price` and `sellingPrice` |
 | `inventory-events` | consumes  | `INVENTORY_UPDATED` → sets `availableQuantity` / `inStock` on the product |
+| `review-events`    | consumes  | `PRODUCT_RATING_UPDATED` → sets `averageRating` / `reviewCount` (only if `ratingVersion` is newer) |
 
-Products start with `availableQuantity: 0`, `inStock: false` until inventory-service reports stock.
+Products start with `availableQuantity: 0`, `inStock: false` until inventory-service reports stock, and with
+`averageRating: 0.0`, `reviewCount: 0` until review-service reports a rating. Best rated first:
+`GET /api/v1/products?sort=averageRating,desc`. Ratings that can't be applied go to `review-events.DLT`.
 
 ## Run
 
