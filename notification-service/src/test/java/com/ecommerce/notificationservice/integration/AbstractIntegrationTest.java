@@ -1,7 +1,9 @@
 package com.ecommerce.notificationservice.integration;
 
+import com.ecommerce.notificationservice.event.EventTypes;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.WishlistEvent;
 import com.ecommerce.notificationservice.service.NotificationService;
 import com.ecommerce.notificationservice.support.RecordingMailSender;
 import com.ecommerce.notificationservice.support.TestTokens;
@@ -27,7 +29,7 @@ import java.util.UUID;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
+@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events", "wishlist-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 @Import(AbstractIntegrationTest.MailConfig.class)
 public abstract class AbstractIntegrationTest {
 
@@ -89,6 +91,11 @@ public abstract class AbstractIntegrationTest {
     protected PaymentEvent paymentEvent(String type, UUID orderId, String orderNumber) {
         return new PaymentEvent(UUID.randomUUID(), type, orderId, orderNumber, customerId, new BigDecimal("1800.00"),
                 "INR", "CARD", "VISA", "4242", type.equals("PAYMENT_FAILED") ? "Your card was declined." : null);
+    }
+
+    protected WishlistEvent priceDrop(String previousPrice, String newPrice) {
+        return new WishlistEvent(UUID.randomUUID(), EventTypes.WISHLIST_PRICE_DROPPED, customerId, EMAIL, UUID.randomUUID(),
+                "PIXEL-8", "Pixel 8", new BigDecimal("1800.00"), new BigDecimal(previousPrice), new BigDecimal(newPrice), "INR");
     }
 
     protected String json(Object value) throws Exception {

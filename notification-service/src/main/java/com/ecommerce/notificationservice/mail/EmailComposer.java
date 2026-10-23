@@ -4,6 +4,7 @@ import com.ecommerce.notificationservice.config.NotificationProperties;
 import com.ecommerce.notificationservice.event.EventTypes;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.WishlistEvent;
 import com.ecommerce.notificationservice.mail.EmailContent.Detail;
 import com.ecommerce.notificationservice.mail.EmailContent.ItemLine;
 import lombok.RequiredArgsConstructor;
@@ -89,6 +90,30 @@ public class EmailComposer {
                     List.of(), null, null);
             default -> null;
         });
+    }
+
+    /** A product the customer saved got cheaper. */
+    public Optional<EmailContent> forWishlistEvent(WishlistEvent e) {
+        if (!EventTypes.WISHLIST_PRICE_DROPPED.equals(e.eventType()) || e.newPrice() == null || e.previousPrice() == null) {
+            return Optional.empty();
+        }
+        String name = e.productName() != null ? e.productName() : e.sku();
+        String now = money(e.newPrice(), e.currency());
+        String before = money(e.previousPrice(), e.currency());
+        String saving = money(e.previousPrice().subtract(e.newPrice()), e.currency());
+        List<Detail> details = new ArrayList<>();
+        details.add(new Detail("Product", name));
+        details.add(new Detail("Was", before));
+        details.add(new Detail("Now", now));
+        details.add(new Detail("You save", saving));
+        if (e.priceWhenAdded() != null && e.priceWhenAdded().compareTo(e.previousPrice()) != 0) {
+            details.add(new Detail("When you saved it", money(e.priceWhenAdded(), e.currency())));
+        }
+        return Optional.of(new EmailContent("Price drop: " + name + " is now " + now,
+                "A product on your wishlist got cheaper",
+                name + " dropped from " + before + " to " + now + ".",
+                details, List.of(), null,
+                "Prices can change at any time. Open your wishlist to buy it or move it to your cart."));
     }
 
     /** True for payment events that send an email (and so need the order's snapshot). */

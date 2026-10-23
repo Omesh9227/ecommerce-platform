@@ -4,11 +4,12 @@ Customer emails on **port 8087**. Database: `ecommerce_notification_db`. Listens
 to send an email.
 
 ```
-order-service   ── order-events   ──►┐
-payment-service ── payment-events ──►┴─► notification-service ──► SMTP (Mailpit locally) ──► customer's inbox
-                                                 │
-Postman ──► api-gateway :8080 ──────────────────►┤  GET /api/v1/notifications        → the logged-in customer's emails
-                                                 └  GET /api/v1/notifications/admin  → ADMIN, all emails (?orderNumber=)
+order-service    ── order-events    ──►┐
+payment-service  ── payment-events  ──►┤
+wishlist-service ── wishlist-events ──►┴─► notification-service ──► SMTP (Mailpit locally) ──► customer's inbox
+                                                    │
+Postman ──► api-gateway :8080 ─────────────────────►┤  GET /api/v1/notifications        → the logged-in customer's emails
+                                                    └  GET /api/v1/notifications/admin  → ADMIN, all emails (?orderNumber=)
 ```
 
 ## Emails
@@ -22,6 +23,7 @@ Postman ──► api-gateway :8080 ──────────────�
 | `ORDER_DELIVERED`   | Your order ORD-… was delivered                      | items, total |
 | `ORDER_CANCELLED`   | Your order ORD-… was cancelled                      | reason, items |
 | `PAYMENT_REFUNDED`  | Refund of INR … for order ORD-…                     | refunded amount, original payment method |
+| `WISHLIST_PRICE_DROPPED` | Price drop: Pixel 8 is now INR 1,500.00       | was, now, you save (from wishlist-service) |
 
 `ORDER_CONFIRMED` sends nothing (the payment email already says it). Every email is HTML (Thymeleaf template
 `templates/email/notification.html`) with a plain-text version for mail apps that don't show HTML.
@@ -83,7 +85,7 @@ inbox (`http://localhost:8025/api/v1/search`).
   accepted the email. A repeated Kafka event finds the row and sends nothing.
 - **Mail server down**: sending throws, the transaction rolls back, and the Kafka consumer retries with
   exponential back-off (~30 s). If it still fails, the event goes to `order-events.notification.DLT` /
-  `payment-events.notification.DLT` so it can be replayed; the topic is never blocked.
+  `payment-events.notification.DLT` / `wishlist-events.notification.DLT` so it can be replayed; the topic is never blocked.
 - **Order snapshots**: payment events don't carry the email or items, so the service keeps a small copy of each
   order (`order_snapshots`, updated only by newer `orderVersion`s). A payment event that arrives before its order
   is retried until the order is known.

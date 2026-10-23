@@ -2,13 +2,15 @@ package com.ecommerce.productservice.event;
 
 import com.ecommerce.productservice.entity.Product;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Published on product-events for PRODUCT_CREATED / PRODUCT_UPDATED / PRODUCT_DISCONTINUED.
  * productVersion increases with every change, so consumers can ignore out-of-date events.
- * (V2 migration builds the same JSON shape in SQL for the backfill - keep them in sync.)
+ * price / sellingPrice (list price and price after discount) let wishlist-service notice price drops.
+ * (V2 migration built older events in SQL for the backfill, without prices - consumers accept both.)
  */
 public record ProductEvent(
         UUID eventId,
@@ -18,6 +20,8 @@ public record ProductEvent(
         String sku,
         String name,
         String status,
+        BigDecimal price,
+        BigDecimal sellingPrice,
         long productVersion
 ) {
 
@@ -30,6 +34,8 @@ public record ProductEvent(
                 product.getSku(),
                 product.getName(),
                 product.getStatus().name(),
+                product.getPrice(),
+                product.getSellingPrice(),
                 product.getVersion() == null ? 0 : product.getVersion()
         );
     }

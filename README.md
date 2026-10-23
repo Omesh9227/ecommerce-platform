@@ -17,12 +17,13 @@ Docker/Docker Compose is added only after all services work locally.
 | order-service   | 8085 | `ecommerce_order_db`   | Phase 5 — complete; payments in Phase 6 |
 | payment-service | 8086 | `ecommerce_payment_db` | Phase 6 — complete (simulated gateway) |
 | notification-service | 8087 | `ecommerce_notification_db` | Phase 7 — complete (emails via Mailpit locally) |
+| wishlist-service | 8088 | `ecommerce_wishlist_db` | Phase 9 — complete (live prices, move to cart, price-drop emails) |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
-Still to come before Docker: wishlist, review, shipping, search, recommendation and admin services, then
+Still to come before Docker: review, shipping, search, recommendation and admin services, then
 Prometheus + Grafana. Docker, Kubernetes, Jenkins and GCP follow once every service runs locally.
 
 ## Service discovery and configuration (Phase 8)
@@ -77,7 +78,9 @@ kafka-console-consumer --bootstrap-server localhost:9092 --topic inventory-event
 Topics (created by the services on startup, 3 partitions, key = productId so each product's events stay in order):
 `product-events`, `inventory-events`, `order-events`, `payment-events` (both keyed by orderId), and dead-letter topics
 `product-events.DLT`, `inventory-events.DLT`, `order-events.DLT`, `payment-events.DLT` (plus notification-service's own
-`order-events.notification.DLT` and `payment-events.notification.DLT`) for messages that could not be processed. If Kafka is stopped, the services keep working: events wait in each
+`order-events.notification.DLT`, `payment-events.notification.DLT`, `wishlist-events.notification.DLT`, and
+wishlist-service's `product-events.wishlist.DLT`) for messages that could not be processed.
+`wishlist-events` (key = user id) carries price-drop alerts from wishlist-service to notification-service. If Kafka is stopped, the services keep working: events wait in each
 service's `outbox_events` table and are sent when Kafka is back.
 
 Integration tests start their own in-memory Kafka, so `mvn verify` doesn't need Kafka running.

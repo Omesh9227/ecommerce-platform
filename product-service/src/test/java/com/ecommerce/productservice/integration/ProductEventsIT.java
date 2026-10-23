@@ -58,6 +58,11 @@ class ProductEventsIT extends AbstractIntegrationTest {
         assertThat(updated.get("status").asText()).isEqualTo("INACTIVE");
         assertThat(discontinued.get("status").asText()).isEqualTo("DISCONTINUED");
 
+        // Prices travel with the events (wishlist-service watches them for price drops)
+        assertThat(created.get("price").decimalValue()).isEqualByComparingTo("59999");
+        assertThat(created.get("sellingPrice").decimalValue()).isEqualByComparingTo("59999");
+        assertThat(updated.get("sellingPrice").decimalValue()).isEqualByComparingTo("79999");
+
         // Versions only go up, so consumers can drop out-of-date events
         long v1 = created.get("productVersion").asLong();
         long v2 = updated.get("productVersion").asLong();

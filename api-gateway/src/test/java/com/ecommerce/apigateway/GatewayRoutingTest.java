@@ -39,6 +39,7 @@ class GatewayRoutingTest {
         registry.add("services.order-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.payment-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.notification-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.wishlist-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -451,6 +452,26 @@ class GatewayRoutingTest {
                 .expectBody()
                 .jsonPath("$.path").isEqualTo("/api/v1/notifications")
                 .jsonPath("$.userId").isEqualTo(customerId.toString());
+    }
+
+    @Test
+    void myWishlist_asCustomer_isForwarded() {
+        webTestClient.get().uri("/api/v1/wishlist")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/wishlist")
+                .jsonPath("$.userId").isEqualTo(customerId.toString());
+    }
+
+    @Test
+    void wishlist_withoutToken_returns401AtTheGateway() {
+        webTestClient.post().uri("/api/v1/wishlist/items")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"productId\":\"" + UUID.randomUUID() + "\"}")
+                .exchange()
+                .expectStatus().isUnauthorized();
     }
 
     @Test
