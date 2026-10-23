@@ -87,6 +87,23 @@ public class ReservationController {
                 reservationService.release(orderReference, currentUser.id())));
     }
 
+    @Operation(summary = "Return the stock of a confirmed reservation",
+            description = "A paid order was cancelled before shipping: the sold units go back on hand. Returning twice is harmless.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Stock returned"),
+            @ApiResponse(responseCode = "404", description = "Reservation not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "Never confirmed (release it instead) or released",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{orderReference}/return")
+    public ResponseEntity<ApiResult<ReservationResponse>> returnStock(
+            @PathVariable("orderReference") String orderReference,
+            @Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser currentUser) {
+        return ResponseEntity.ok(ApiResult.of("Stock returned successfully",
+                reservationService.returnStock(orderReference, currentUser.id())));
+    }
+
     @Operation(summary = "Confirm a reservation", description = "The sale happened: held stock is removed from on-hand. Confirming twice is harmless.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Confirmed"),

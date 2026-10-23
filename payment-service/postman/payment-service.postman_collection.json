@@ -1,0 +1,1579 @@
+{
+  "info": {
+    "name": "E-Commerce - Payment Service",
+    "description": "Run top to bottom with the Collection Runner (right-click → Run collection): the 'Wait for ...' requests retry until a Kafka event has arrived, which only works in the Runner. Goes through the api-gateway on 8080, so start PostgreSQL, Kafka, Redis and all seven services first. Uses the simulated gateway's test cards: 4242 4242 4242 4242 succeeds, 4000 0000 0000 0002 is declined, 4000 0000 0000 9995 has insufficient funds; UPI ids starting with 'fail' are declined.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Setup (customer, product, stock, order)",
+      "item": [
+        {
+          "name": "Login admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('runTag', String(Date.now()).slice(-6));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('adminToken', pm.response.json().data.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Omesh\",\n  \"lastName\": \"Kumar\",\n  \"email\": \"{{customerEmail}}\",\n  \"phoneNumber\": \"9876543210\",\n  \"password\": \"Password@123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('customerEmail', `payments+${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"Password@123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('customerToken', pm.response.json().data.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create category (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Payment test {{runTag}}\",\n  \"description\": \"Payment collection\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('categoryId', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Phone: 1000, 10% off (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"PAYPHONE-{{runTag}}\",\n  \"name\": \"Pay Phone {{runTag}}\",\n  \"description\": \"Payment test\",\n  \"brand\": \"Acme\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"price\": 1000,\n  \"discountPercent\": 10,\n  \"imageUrls\": [\n    \"https://cdn.example.com/p.jpg\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('phoneId', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for Phone inventory item (Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/{{phoneId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "{{phoneId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// inventory-service created the Phone",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.code === 200; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('inventory-service created the Phone', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set Phone stock to 10 (admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/{{phoneId}}/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "{{phoneId}}",
+                "stock"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantityOnHand\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for product-service to show stock (Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{phoneId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{phoneId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// product-service shows 10 in stock",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.availableQuantity === 10; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('product-service shows 10 in stock', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Phone x2 to cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cart/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cart",
+                "items"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{phoneId}}\",\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout (1800)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "checkout"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shippingAddress\": {\n    \"fullName\": \"Omesh Kumar\",\n    \"phone\": \"9876543210\",\n    \"line1\": \"Flat 12B, Green Residency\",\n    \"line2\": \"MG Road\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"postalCode\": \"560001\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('checkoutKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('orderNumber', pm.response.json().data.orderNumber);",
+                  "pm.collectionVariables.set('orderId', pm.response.json().data.orderId);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Paying (declines, retries, success)",
+      "item": [
+        {
+          "name": "Wait for the payment (ORDER_PLACED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// payment-service created the payment",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.code === 200; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('payment-service created the payment', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "    pm.test('PENDING, 1800', () => { const p = pm.response.json().data; pm.expect(p.status).to.eql('PENDING'); pm.expect(p.amount).to.eql(1800); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay without Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid card number (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4241\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Expired card (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 1,\n    \"expiryYear\": 2020,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Declined card (402)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4000 0000 0000 0002\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 402', () => pm.response.to.have.status(402));",
+                  "pm.test('Declined message', () => pm.expect(pm.response.json().message).to.eql('Your card was declined.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insufficient funds (402)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4000 0000 0000 9995\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 402', () => pm.response.to.have.status(402));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Declined UPI (402)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"UPI\",\n  \"upiId\": \"fail@okhdfc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 402', () => pm.response.to.have.status(402));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay with test card 4242 (200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json().data;",
+                  "pm.test('SUCCEEDED', () => pm.expect(p.status).to.eql('SUCCEEDED'));",
+                  "pm.test('Only brand and last 4 kept', () => { pm.expect(p.cardBrand).to.eql('VISA'); pm.expect(p.cardLast4).to.eql('4242'); pm.expect(JSON.stringify(p)).to.not.include('4242424242424242'); });",
+                  "pm.test('Earlier declines are listed', () => pm.expect(p.attempts.length).to.eql(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same Idempotency-Key again: same result, no second charge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Still 4 attempts', () => pm.expect(pm.response.json().data.attempts.length).to.eql(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay again with a new key (409 already paid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for the order to be CONFIRMED (PAYMENT_SUCCEEDED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{orderNumber}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// order is CONFIRMED",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.status === 'CONFIRMED'; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('order is CONFIRMED', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "    pm.test('Timeline says how it was paid', () => pm.expect(pm.response.json().data.timeline.map(t => t.note)).to.include('Paid by VISA ending 4242'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: 2 Phones sold (on hand 8)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/{{phoneId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "{{phoneId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('8 on hand', () => pm.expect(pm.response.json().data.quantityOnHand).to.eql(8));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Cancel after payment = refund",
+      "item": [
+        {
+          "name": "Cancel the paid order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{orderNumber}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Found it cheaper\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CANCELLED', () => pm.expect(pm.response.json().data.status).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: stock is back (on hand 10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/{{phoneId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "inventory",
+                "{{phoneId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('10 on hand', () => pm.expect(pm.response.json().data.quantityOnHand).to.eql(10));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for the refund (ORDER_CANCELLED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// payment is REFUNDED",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.status === 'REFUNDED'; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('payment is REFUNDED', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "    pm.test('Reason', () => pm.expect(pm.response.json().data.refundReason).to.include('Found it cheaper'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for the refund on the order timeline (PAYMENT_REFUNDED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{orderNumber}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// order timeline shows the refund",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.timeline.some(t => t.note === 'Refund of 1800.00 INR completed'); } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('order timeline shows the refund', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A cancelled order can't be paid (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer can't list all payments (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "admin"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: refunded payments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/admin?status=REFUNDED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "admin"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "REFUNDED"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Ours is there', () => pm.expect(pm.response.json().data.content.map(p => p.orderNumber)).to.include(pm.collectionVariables.get('orderNumber')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@ecommerce.com"
+    },
+    {
+      "key": "adminPassword",
+      "value": "Admin@12345"
+    },
+    {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "runTag",
+      "value": ""
+    },
+    {
+      "key": "attempts",
+      "value": "0"
+    },
+    {
+      "key": "categoryId",
+      "value": ""
+    },
+    {
+      "key": "phoneId",
+      "value": ""
+    },
+    {
+      "key": "checkoutKey",
+      "value": ""
+    },
+    {
+      "key": "paymentKey",
+      "value": ""
+    },
+    {
+      "key": "orderNumber",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    }
+  ]
+}

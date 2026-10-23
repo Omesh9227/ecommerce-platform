@@ -222,6 +222,28 @@ class ReservationControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void returnStock_afterConfirm_putsUnitsBack_andIsIdempotent() throws Exception {
+        UUID phone = createItem("PHONE");
+        setStock(phone, 10);
+        reserve(reservationJson("ORD-2003", phone, 4)).andExpect(status().isCreated());
+
+        action("ORD-2003", "return").andExpect(status().isConflict()); // not sold yet: release instead
+        action("ORD-2003", "confirm").andExpect(status().isOk());
+        assertThat(item(phone).get("quantityOnHand").asInt()).isEqualTo(6);
+
+        action("ORD-2003", "return").andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("RETURNED"));
+        action("ORD-2003", "return").andExpect(status().isOk());
+        action("ORD-2003", "confirm").andExpect(status().isConflict());
+
+        JsonNode stock = item(phone);
+        assertThat(stock.get("quantityOnHand").asInt()).isEqualTo(10);
+        assertThat(stock.get("quantityReserved").asInt()).isZero();
+        mockMvc.perform(get(INVENTORY_URL + "/" + phone + "/movements").header(HttpHeaders.AUTHORIZATION, adminAuth()))
+                .andExpect(jsonPath("$.data.content[0].movementType").value("RETURN"))
+                .andExpect(jsonPath("$.data.content[0].quantityChange").value(4));
+    }
+
+    @Test
     void unknownReservation_is404() throws Exception {
         action("ORD-404", "release").andExpect(status().isNotFound());
         mockMvc.perform(get(RESERVATIONS_URL + "/ORD-404").header(HttpHeaders.AUTHORIZATION, adminAuth()))

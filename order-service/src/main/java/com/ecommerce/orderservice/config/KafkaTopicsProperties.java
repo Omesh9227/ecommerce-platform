@@ -10,6 +10,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "app.kafka.topics")
 public record KafkaTopicsProperties(
         @NotBlank String orderEvents,
+        @NotBlank String paymentEvents,
         @Positive int partitions
 ) {
 }

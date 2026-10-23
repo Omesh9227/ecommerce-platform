@@ -30,7 +30,7 @@ class OrderModelTest {
         assertThat(OrderStatus.CONFIRMED.canMoveTo(OrderStatus.SHIPPED)).isTrue();
         assertThat(OrderStatus.SHIPPED.canMoveTo(OrderStatus.DELIVERED)).isTrue();
 
-        assertThat(OrderStatus.CONFIRMED.canMoveTo(OrderStatus.CANCELLED)).isFalse();
+        assertThat(OrderStatus.CONFIRMED.canMoveTo(OrderStatus.CANCELLED)).isTrue(); // paid orders: refunded
         assertThat(OrderStatus.CONFIRMED.canMoveTo(OrderStatus.DELIVERED)).isFalse();
         assertThat(OrderStatus.SHIPPED.canMoveTo(OrderStatus.CANCELLED)).isFalse();
         for (OrderStatus next : OrderStatus.values()) {

@@ -6,5 +6,7 @@ public enum ReservationStatus {
     /** Hold cancelled (order cancelled / payment failed); stock is available again. */
     RELEASED,
     /** Order completed; held stock was deducted from on-hand. */
-    CONFIRMED
+    CONFIRMED,
+    /** A confirmed (paid) order was cancelled; its stock was added back to on-hand. */
+    RETURNED
 }

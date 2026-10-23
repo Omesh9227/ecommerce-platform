@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "E-Commerce - Order Service",
-    "description": "Run top to bottom with the Collection Runner (right-click → Run collection): the 'Wait for ...' requests retry until a Kafka event has arrived, which only works in the Runner. Goes through the api-gateway on 8080, so start PostgreSQL, Kafka, Redis and all six services first (user, product, inventory, cart, order, gateway). Every run uses a new customer and a unique tag.",
+    "description": "Run top to bottom with the Collection Runner (right-click → Run collection): the 'Wait for ...' requests retry until a Kafka event has arrived, which only works in the Runner. Goes through the api-gateway on 8080, so start PostgreSQL, Kafka, Redis and all seven services first (user, product, inventory, cart, order, payment, gateway). Every run uses a new customer and a unique tag.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1127,7 +1127,7 @@
       ]
     },
     {
-      "name": "2. Pay, ship, deliver",
+      "name": "2. Pay (payment-service), ship, deliver",
       "item": [
         {
           "name": "Add Pen x2 to cart",
@@ -1243,27 +1243,26 @@
           ]
         },
         {
-          "name": "Admin: confirm payment",
+          "name": "Wait for the payment to be ready (ORDER_PLACED via Kafka)",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
+                "value": "Bearer {{customerToken}}"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/orders/admin/{{orderNumber2}}/confirm-payment",
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber2}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
+                "payments",
                 "orders",
-                "admin",
-                "{{orderNumber2}}",
-                "confirm-payment"
+                "{{orderNumber2}}"
               ]
             }
           },
@@ -1273,8 +1272,128 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// payment-service created the payment",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.code === 200; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('payment-service created the payment', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay with a test card (payment-service)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/orders/{{orderNumber2}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "orders",
+                "{{orderNumber2}}",
+                "pay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"card\": {\n    \"number\": \"4242 4242 4242 4242\",\n    \"expiryMonth\": 12,\n    \"expiryYear\": 2030,\n    \"cvv\": \"123\",\n    \"holderName\": \"Omesh Kumar\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));"
+                  "pm.test('Paid', () => pm.expect(pm.response.json().data.status).to.eql('SUCCEEDED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for the order to be confirmed (PAYMENT_SUCCEEDED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber2}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{orderNumber2}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// order is CONFIRMED",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.status === 'CONFIRMED'; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('order is CONFIRMED', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
                 ]
               }
             }
@@ -1312,42 +1431,6 @@
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
                   "const d = pm.response.json().data;",
                   "pm.test('18 on hand, 0 reserved', () => { pm.expect(d.quantityOnHand).to.eql(18); pm.expect(d.quantityReserved).to.eql(0); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Customer can't cancel a paid order (409)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customerToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber2}}/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "orders",
-                "{{orderNumber2}}",
-                "cancel"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
                 ]
               }
             }
@@ -1474,6 +1557,42 @@
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('DELIVERED', () => pm.expect(pm.response.json().data.status).to.eql('DELIVERED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer can't cancel a delivered order (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber2}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{orderNumber2}}",
+                "cancel"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
                 ]
               }
             }
@@ -1851,6 +1970,10 @@
     },
     {
       "key": "checkoutKey",
+      "value": ""
+    },
+    {
+      "key": "paymentKey",
       "value": ""
     },
     {
