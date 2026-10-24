@@ -12,9 +12,10 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 /**
- * order-service publishes order-events (key = order id) and consumes payment-events.
- * A payment event that can't be processed (e.g. inventory-service briefly down while confirming a paid order) is
- * retried with growing pauses for about 30 s, then sent to "payment-events.DLT" so it never blocks the partition.
+ * order-service publishes order-events (key = order id) and consumes payment-events and shipment-events.
+ * An event that can't be processed (e.g. inventory-service briefly down while confirming a paid order) is
+ * retried with growing pauses for about 30 s, then sent to "payment-events.DLT" / "shipment-events.DLT" so it never
+ * blocks the partition.
  */
 @Configuration
 public class KafkaConfig {
@@ -29,6 +30,11 @@ public class KafkaConfig {
     @Bean
     public NewTopic paymentEventsDeadLetterTopic(KafkaTopicsProperties topics) {
         return TopicBuilder.name(topics.paymentEvents() + DLT_SUFFIX).partitions(topics.partitions()).replicas(1).build();
+    }
+
+    @Bean
+    public NewTopic shipmentEventsDeadLetterTopic(KafkaTopicsProperties topics) {
+        return TopicBuilder.name(topics.shipmentEvents() + DLT_SUFFIX).partitions(topics.partitions()).replicas(1).build();
     }
 
     @Bean

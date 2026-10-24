@@ -12,6 +12,7 @@ public record KafkaTopicsProperties(
         @NotBlank String orderEvents,
         @NotBlank String paymentEvents,
         @NotBlank String wishlistEvents,
+        @NotBlank String shipmentEvents,
         @Positive int partitions
 ) {
 }

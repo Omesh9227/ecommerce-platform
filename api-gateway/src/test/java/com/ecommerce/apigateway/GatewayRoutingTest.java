@@ -41,6 +41,7 @@ class GatewayRoutingTest {
         registry.add("services.notification-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.wishlist-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.review-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.shipping-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -276,6 +277,36 @@ class GatewayRoutingTest {
     }
 
     @Test
+    void trackingAParcel_andDeliveryEstimates_arePublic() {
+        webTestClient.get().uri("/api/v1/shipments/track/EC482019375610")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/shipments/track/EC482019375610")
+                .jsonPath("$.userId").doesNotExist();
+        webTestClient.get().uri("/api/v1/shipments/delivery-estimate?postalCode=110001")
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
+    void myShipments_needAToken_andWarehouseActionsNeedAdmin() {
+        webTestClient.get().uri("/api/v1/shipments").exchange().expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/shipments/orders/ORD-3FA85F645717")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.userId").isEqualTo(customerId.toString());
+        webTestClient.post().uri("/api/v1/shipments/admin/" + UUID.randomUUID() + "/pack")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+        webTestClient.post().uri("/api/v1/shipments/track/EC482019375610")
+                .exchange()
+                .expectStatus().isUnauthorized(); // only GET is public
+    }
+
+    @Test
     void browsingCategories_isPublic() {
         webTestClient.get().uri("/api/v1/categories")
                 .exchange()
@@ -431,12 +462,12 @@ class GatewayRoutingTest {
 
     @Test
     void orderAdminEndpoints_asAdmin_areForwarded() {
-        webTestClient.post().uri("/api/v1/orders/admin/ORD-3FA85F645717/ship")
+        webTestClient.post().uri("/api/v1/orders/admin/ORD-3FA85F645717/cancel")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.path").isEqualTo("/api/v1/orders/admin/ORD-3FA85F645717/ship")
+                .jsonPath("$.path").isEqualTo("/api/v1/orders/admin/ORD-3FA85F645717/cancel")
                 .jsonPath("$.role").isEqualTo("ADMIN");
     }
 

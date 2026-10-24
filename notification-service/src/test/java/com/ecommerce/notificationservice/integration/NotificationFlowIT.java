@@ -140,7 +140,7 @@ class NotificationFlowIT extends AbstractIntegrationTest {
     void noEmailAddress_meansNoEmail() {
         UUID orderId = UUID.randomUUID();
         OrderEvent withoutEmail = new OrderEvent(UUID.randomUUID(), EventTypes.ORDER_PLACED, orderId, "ORD-000000000008",
-                customerId, null, "X", null, null, null, new java.math.BigDecimal("10.00"), "INR", java.util.List.of(), 1);
+                customerId, null, "X", null, null, null, null, new java.math.BigDecimal("10.00"), "INR", java.util.List.of(), 1);
 
         notificationService.onOrderEvent(withoutEmail);
 
@@ -163,6 +163,34 @@ class NotificationFlowIT extends AbstractIntegrationTest {
         mockMvc.perform(get(NOTIFICATIONS_URL).header(HttpHeaders.AUTHORIZATION, customerAuth()))
                 .andExpect(jsonPath("$.data.content[0].eventType").value("WISHLIST_PRICE_DROPPED"))
                 .andExpect(jsonPath("$.data.content[0].orderNumber").doesNotExist());
+    }
+
+    @Test
+    void outForDeliveryOnKafka_emailsArrivingToday() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        sendOnKafka("shipment-events", orderId, shipmentEvent(EventTypes.SHIPMENT_OUT_FOR_DELIVERY, orderId, "ORD-000000000009", null));
+
+        await().atMost(Duration.ofSeconds(20)).until(() -> mail.sent().size() == 1);
+        MimeMessage email = mail.sent().get(0);
+        assertThat(email.getSubject()).isEqualTo("Your order ORD-000000000009 is out for delivery");
+        assertThat(RecordingMailSender.allText(email)).contains("Arriving today", "EC482019375610");
+        await().atMost(Duration.ofSeconds(5)).until(() -> notificationCount() == 1);
+        mockMvc.perform(get(NOTIFICATIONS_URL).header(HttpHeaders.AUTHORIZATION, customerAuth()))
+                .andExpect(jsonPath("$.data.content[0].eventType").value("SHIPMENT_OUT_FOR_DELIVERY"))
+                .andExpect(jsonPath("$.data.content[0].orderNumber").value("ORD-000000000009"));
+    }
+
+    @Test
+    void missedDelivery_emailsOnce_andShippedFromShippingServiceSendsNothing() {
+        UUID orderId = UUID.randomUUID();
+        var missed = shipmentEvent(EventTypes.SHIPMENT_DELIVERY_FAILED, orderId, "ORD-000000000010", "Customer not available");
+
+        notificationService.onShipmentEvent(missed);
+        notificationService.onShipmentEvent(missed);
+        notificationService.onShipmentEvent(shipmentEvent("SHIPMENT_SHIPPED", orderId, "ORD-000000000010", null));
+
+        assertThat(mail.sent()).hasSize(1);
+        assertThat(notificationCount()).isEqualTo(1);
     }
 
     @Test

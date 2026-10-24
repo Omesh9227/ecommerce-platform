@@ -2,6 +2,8 @@ package com.ecommerce.orderservice.integration;
 
 import com.ecommerce.orderservice.event.EventTypes;
 import com.ecommerce.orderservice.event.PaymentEvent;
+import com.ecommerce.orderservice.event.ShipmentEvent;
+import com.ecommerce.orderservice.service.OrderLifecycleService;
 import com.ecommerce.orderservice.service.PaymentEventHandler;
 import com.ecommerce.orderservice.support.MutableClock;
 import com.ecommerce.orderservice.support.StubServices;
@@ -50,7 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
+@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events", "shipment-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 @Import(AbstractIntegrationTest.TestClockConfig.class)
 public abstract class AbstractIntegrationTest {
 
@@ -91,6 +93,8 @@ public abstract class AbstractIntegrationTest {
     protected MutableClock clock;
     @Autowired
     protected PaymentEventHandler paymentEventHandler;
+    @Autowired
+    protected OrderLifecycleService lifecycleService;
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
@@ -155,6 +159,17 @@ public abstract class AbstractIntegrationTest {
         paymentEventHandler.handle(paymentEvent(EventTypes.PAYMENT_SUCCEEDED, orderNumber));
     }
 
+    /** A shipment event as shipping-service would publish it. */
+    protected ShipmentEvent shipmentEvent(String type, String orderNumber, long shipmentVersion, String note) {
+        return new ShipmentEvent(UUID.randomUUID(), type, orderId(orderNumber), orderNumber, "Delhivery", "EC482019375610",
+                java.time.LocalDate.of(2026, 10, 27), "Koramangala", note, shipmentVersion);
+    }
+
+    /** shipping-service reports a step (as if its event had arrived). */
+    protected void shipment(String type, String orderNumber, long shipmentVersion) {
+        lifecycleService.applyShipmentEvent(shipmentEvent(type, orderNumber, shipmentVersion, null));
+    }
+
     protected JsonNode readJson(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
@@ -165,6 +180,11 @@ public abstract class AbstractIntegrationTest {
 
     /** Reads order-events from the beginning (fresh consumer group) until {@code expected} events for this key arrived. */
     protected List<ConsumerRecord<String, String>> awaitEvents(String key, int expected) {
+        return awaitRecords("order-events", key, expected);
+    }
+
+    /** Reads a topic from the beginning (fresh consumer group) until {@code expected} records for this key arrived. */
+    protected List<ConsumerRecord<String, String>> awaitRecords(String topic, String key, int expected) {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID());
@@ -173,7 +193,7 @@ public abstract class AbstractIntegrationTest {
         List<ConsumerRecord<String, String>> found = new ArrayList<>();
         try (KafkaConsumer<String, String> consumer =
                      new KafkaConsumer<>(props, new StringDeserializer(), new StringDeserializer())) {
-            consumer.subscribe(List.of("order-events"));
+            consumer.subscribe(List.of(topic));
             await().pollInSameThread().atMost(Duration.ofSeconds(30)).until(() -> {
                 for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(300))) {
                     if (key.equals(record.key())) {

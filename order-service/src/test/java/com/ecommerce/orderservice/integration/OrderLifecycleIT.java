@@ -34,10 +34,6 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         return mockMvc.perform(request);
     }
 
-    private ResultActions admin(String orderNumber, String action) throws Exception {
-        return mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/" + action).header(HttpHeaders.AUTHORIZATION, adminAuth));
-    }
-
     // ---------- Cancel ----------
 
     @Test
@@ -89,8 +85,11 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         String orderNumber = placeOrder(customerAuth, phone, 1);
 
         mockMvc.perform(get(ADMIN_URL).header(HttpHeaders.AUTHORIZATION, customerAuth)).andExpect(status().isForbidden());
-        mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/ship").header(HttpHeaders.AUTHORIZATION, customerAuth))
+        mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/cancel").header(HttpHeaders.AUTHORIZATION, customerAuth))
                 .andExpect(status().isForbidden());
+        // shipping and delivery belong to shipping-service now
+        mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/ship").header(HttpHeaders.AUTHORIZATION, adminAuth))
+                .andExpect(status().isNotFound());
         mockMvc.perform(get(ORDERS_URL)).andExpect(status().isUnauthorized());
     }
 
@@ -111,29 +110,35 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         assertThat(stub.stock(phone).onHand).isEqualTo(8);
         assertThat(stub.stock(phone).reserved).isZero();
 
-        admin(orderNumber, "deliver").andExpect(status().isConflict()); // must ship first
-
-        mockMvc.perform(post(ADMIN_URL + "/" + orderNumber + "/ship")
-                        .header(HttpHeaders.AUTHORIZATION, adminAuth)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"carrier\":\"Delhivery\",\"trackingNumber\":\"DLV123\"}"))
-                .andExpect(status().isOk())
+        // shipping-service reports each step (shipment-events)
+        shipment("SHIPMENT_SHIPPED", orderNumber, 3);
+        shipment("SHIPMENT_SHIPPED", orderNumber, 3); // a repeated event changes nothing
+        mockMvc.perform(get(ORDERS_URL + "/" + orderNumber).header(HttpHeaders.AUTHORIZATION, customerAuth))
                 .andExpect(jsonPath("$.data.status").value("SHIPPED"))
                 .andExpect(jsonPath("$.data.carrier").value("Delhivery"))
-                .andExpect(jsonPath("$.data.trackingNumber").value("DLV123"));
-        admin(orderNumber, "ship").andExpect(status().isOk()); // repeating is harmless
+                .andExpect(jsonPath("$.data.trackingNumber").value("EC482019375610"))
+                .andExpect(jsonPath("$.data.estimatedDeliveryDate").value("2026-10-27"))
+                .andExpect(jsonPath("$.data.shippedAt").exists());
         customerCancel(customerAuth, orderNumber, null)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(containsString("on its way")));
 
-        admin(orderNumber, "deliver")
-                .andExpect(status().isOk())
+        shipment("SHIPMENT_OUT_FOR_DELIVERY", orderNumber, 5);
+        lifecycleService.applyShipmentEvent(shipmentEvent("SHIPMENT_DELIVERY_FAILED", orderNumber, 6, "Customer not available"));
+        shipment("SHIPMENT_OUT_FOR_DELIVERY", orderNumber, 4); // older than the last one applied: ignored
+        shipment("SHIPMENT_OUT_FOR_DELIVERY", orderNumber, 7);
+        shipment("SHIPMENT_DELIVERED", orderNumber, 8);
+        shipment("SHIPMENT_DELIVERED", orderNumber, 8);
+        mockMvc.perform(get(ORDERS_URL + "/" + orderNumber).header(HttpHeaders.AUTHORIZATION, customerAuth))
                 .andExpect(jsonPath("$.data.status").value("DELIVERED"))
-                .andExpect(jsonPath("$.data.deliveredAt").exists());
+                .andExpect(jsonPath("$.data.deliveredAt").exists())
+                .andExpect(jsonPath("$.data.timeline[*].note").value(org.hamcrest.Matchers.contains(
+                        "Order placed, stock reserved", "Paid by VISA ending 4242", "Shipped with Delhivery (EC482019375610)", "Out for delivery",
+                        "Delivery attempt failed: Customer not available - we'll try again", "Out for delivery", "Delivered")));
 
         mockMvc.perform(get(ORDERS_URL + "/" + orderNumber).header(HttpHeaders.AUTHORIZATION, customerAuth))
-                .andExpect(jsonPath("$.data.timeline[*].toStatus").value(
-                        org.hamcrest.Matchers.contains("PENDING_PAYMENT", "CONFIRMED", "SHIPPED", "DELIVERED")));
+                .andExpect(jsonPath("$.data.timeline[*].toStatus").value(org.hamcrest.Matchers.contains(
+                        "PENDING_PAYMENT", "CONFIRMED", "SHIPPED", "SHIPPED", "SHIPPED", "SHIPPED", "DELIVERED")));
 
         String orderId = jdbcTemplate.queryForObject("SELECT id::text FROM orders WHERE order_number = ?", String.class, orderNumber);
         List<ConsumerRecord<String, String>> events = awaitEvents(orderId, 4);
@@ -143,7 +148,11 @@ class OrderLifecycleIT extends AbstractIntegrationTest {
         assertThat(versions).isSorted().doesNotHaveDuplicates();
         JsonNode shipped = readEvent(events.get(2).value());
         assertThat(shipped.get("carrier").asText()).isEqualTo("Delhivery");
-        assertThat(shipped.get("trackingNumber").asText()).isEqualTo("DLV123");
+        assertThat(shipped.get("trackingNumber").asText()).isEqualTo("EC482019375610");
+        assertThat(shipped.get("estimatedDeliveryDate").asText()).isEqualTo("2026-10-27");
+        JsonNode confirmed = readEvent(events.get(1).value());
+        assertThat(confirmed.at("/shippingAddress/postalCode").asText()).isEqualTo("560001");
+        assertThat(confirmed.at("/shippingAddress/fullName").asText()).isEqualTo("Omesh Kumar");
         assertThat(shipped.get("items").get(0).get("productName").asText()).isEqualTo("Product PHONE");
     }
 

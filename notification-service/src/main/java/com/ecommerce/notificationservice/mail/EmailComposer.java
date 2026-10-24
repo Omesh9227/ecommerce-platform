@@ -4,6 +4,7 @@ import com.ecommerce.notificationservice.config.NotificationProperties;
 import com.ecommerce.notificationservice.event.EventTypes;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.ShipmentEvent;
 import com.ecommerce.notificationservice.event.WishlistEvent;
 import com.ecommerce.notificationservice.mail.EmailContent.Detail;
 import com.ecommerce.notificationservice.mail.EmailContent.ItemLine;
@@ -14,6 +15,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -26,6 +28,8 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 public class EmailComposer {
+
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH);
 
     private final NotificationProperties properties;
 
@@ -49,6 +53,9 @@ public class EmailComposer {
                 }
                 if (e.trackingNumber() != null) {
                     details.add(new Detail("Tracking number", e.trackingNumber()));
+                }
+                if (e.estimatedDeliveryDate() != null) {
+                    details.add(new Detail("Expected delivery", DAY.format(e.estimatedDeliveryDate())));
                 }
                 yield new EmailContent("Your order " + number + " has shipped", "Your order is on its way",
                         "Good news - your order has left our warehouse.", details, items, total, null);
@@ -88,6 +95,35 @@ public class EmailComposer {
                             + "). Depending on your bank it can take 5-7 business days to show up.",
                     List.of(new Detail("Order number", number), new Detail("Refunded", amount)),
                     List.of(), null, null);
+            default -> null;
+        });
+    }
+
+    /** Out for delivery ("arriving today") and missed deliveries. Shipped/delivered emails come from order events. */
+    public Optional<EmailContent> forShipmentEvent(ShipmentEvent e) {
+        String number = e.orderNumber();
+        String carrier = e.carrier() != null ? e.carrier() : "The courier";
+        List<Detail> details = new ArrayList<>();
+        details.add(new Detail("Order number", number));
+        if (e.carrier() != null) {
+            details.add(new Detail("Carrier", e.carrier()));
+        }
+        if (e.trackingNumber() != null) {
+            details.add(new Detail("Tracking number", e.trackingNumber()));
+        }
+        return Optional.ofNullable(switch (e.eventType()) {
+            case EventTypes.SHIPMENT_OUT_FOR_DELIVERY -> new EmailContent("Your order " + number + " is out for delivery",
+                    "Arriving today",
+                    carrier + " is on the way with your order and should reach you today. Please keep your phone handy.",
+                    details, List.of(), null, null);
+            case EventTypes.SHIPMENT_DELIVERY_FAILED -> {
+                details.add(new Detail("Attempt", String.valueOf(Math.max(e.failedAttempts(), 1))));
+                yield new EmailContent("We missed you - delivery of order " + number, "We couldn't deliver your order",
+                        carrier + " tried to deliver your order" + (e.note() == null ? "" : " but couldn't: " + e.note())
+                                + ". They'll try again soon.",
+                        details, List.of(), null,
+                        "If you won't be around, contact the courier with your tracking number to choose another time.");
+            }
             default -> null;
         });
     }

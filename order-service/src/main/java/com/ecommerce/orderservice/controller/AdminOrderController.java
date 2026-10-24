@@ -1,7 +1,6 @@
 package com.ecommerce.orderservice.controller;
 
 import com.ecommerce.orderservice.dto.request.CancelOrderRequest;
-import com.ecommerce.orderservice.dto.request.ShipOrderRequest;
 import com.ecommerce.orderservice.dto.response.ApiResult;
 import com.ecommerce.orderservice.dto.response.ErrorResponse;
 import com.ecommerce.orderservice.dto.response.OrderResponse;
@@ -36,7 +35,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Order management for admins (ADMIN role, checked by SecurityConfig and by the gateway). */
+/**
+ * Order management for admins (ADMIN role, checked by SecurityConfig and by the gateway).
+ * Shipping and delivery are done in shipping-service (/api/v1/shipments/admin); orders follow its events.
+ */
 @RestController
 @RequestMapping("/api/v1/orders/admin")
 @RequiredArgsConstructor
@@ -64,23 +66,6 @@ public class AdminOrderController {
             @RequestParam(name = "userId", required = false) UUID userId,
             @ParameterObject @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(ApiResult.of("Orders fetched successfully", queryService.allOrders(status, userId, pageable)));
-    }
-
-    @Operation(summary = "Mark as shipped", description = "CONFIRMED -> SHIPPED, with optional carrier and tracking number.")
-    @PostMapping("/{orderNumber}/ship")
-    public ResponseEntity<ApiResult<OrderResponse>> ship(
-            @PathVariable("orderNumber") String orderNumber,
-            @Valid @RequestBody(required = false) ShipOrderRequest request,
-            @Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser admin) {
-        return ResponseEntity.ok(ApiResult.of("Order shipped", lifecycleService.ship(orderNumber, admin, request)));
-    }
-
-    @Operation(summary = "Mark as delivered", description = "SHIPPED -> DELIVERED.")
-    @PostMapping("/{orderNumber}/deliver")
-    public ResponseEntity<ApiResult<OrderResponse>> deliver(
-            @PathVariable("orderNumber") String orderNumber,
-            @Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser admin) {
-        return ResponseEntity.ok(ApiResult.of("Order delivered", lifecycleService.deliver(orderNumber, admin)));
     }
 
     @Operation(summary = "Cancel any order", description = "Same rules as the customer's cancel: before shipping; paid orders are refunded.")

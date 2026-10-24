@@ -3,6 +3,7 @@ package com.ecommerce.notificationservice.integration;
 import com.ecommerce.notificationservice.event.EventTypes;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.ShipmentEvent;
 import com.ecommerce.notificationservice.event.WishlistEvent;
 import com.ecommerce.notificationservice.service.NotificationService;
 import com.ecommerce.notificationservice.support.RecordingMailSender;
@@ -29,7 +30,7 @@ import java.util.UUID;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events", "wishlist-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
+@EmbeddedKafka(partitions = 1, topics = {"order-events", "payment-events", "wishlist-events", "shipment-events"}, bootstrapServersProperty = "spring.kafka.bootstrap-servers")
 @Import(AbstractIntegrationTest.MailConfig.class)
 public abstract class AbstractIntegrationTest {
 
@@ -84,6 +85,7 @@ public abstract class AbstractIntegrationTest {
         return new OrderEvent(UUID.randomUUID(), type, orderId, orderNumber, customerId, EMAIL, "X",
                 type.equals("ORDER_CANCELLED") ? "Changed my mind" : null,
                 type.equals("ORDER_SHIPPED") ? "Delhivery" : null, type.equals("ORDER_SHIPPED") ? "DLV123" : null,
+                type.equals("ORDER_SHIPPED") ? java.time.LocalDate.of(2026, 10, 27) : null,
                 new BigDecimal("1800.00"), "INR",
                 List.of(new OrderEvent.Item(UUID.randomUUID(), "PHONE", "Pixel 8", 2, new BigDecimal("900.00"))), version);
     }
@@ -91,6 +93,11 @@ public abstract class AbstractIntegrationTest {
     protected PaymentEvent paymentEvent(String type, UUID orderId, String orderNumber) {
         return new PaymentEvent(UUID.randomUUID(), type, orderId, orderNumber, customerId, new BigDecimal("1800.00"),
                 "INR", "CARD", "VISA", "4242", type.equals("PAYMENT_FAILED") ? "Your card was declined." : null);
+    }
+
+    protected ShipmentEvent shipmentEvent(String type, UUID orderId, String orderNumber, String note) {
+        return new ShipmentEvent(UUID.randomUUID(), type, orderId, orderNumber, customerId, EMAIL, "Delhivery",
+                "EC482019375610", java.time.LocalDate.of(2026, 10, 27), note, note == null ? 0 : 1);
     }
 
     protected WishlistEvent priceDrop(String previousPrice, String newPrice) {

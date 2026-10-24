@@ -4,6 +4,7 @@ import com.ecommerce.orderservice.entity.OrderStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +29,7 @@ public record OrderResponse(
         Instant paymentDueAt,
         String carrier,
         String trackingNumber,
+        LocalDate estimatedDeliveryDate,
         Instant placedAt,
         Instant confirmedAt,
         Instant shippedAt,

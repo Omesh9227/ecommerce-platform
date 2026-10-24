@@ -3,10 +3,11 @@ package com.ecommerce.orderservice.service;
 import com.ecommerce.orderservice.client.DownstreamRejectedException;
 import com.ecommerce.orderservice.client.InventoryClient;
 import com.ecommerce.orderservice.config.OrderProperties;
-import com.ecommerce.orderservice.dto.request.ShipOrderRequest;
 import com.ecommerce.orderservice.dto.response.OrderResponse;
 import com.ecommerce.orderservice.entity.CustomerOrder;
 import com.ecommerce.orderservice.entity.OrderStatus;
+import com.ecommerce.orderservice.event.EventTypes;
+import com.ecommerce.orderservice.event.ShipmentEvent;
 import com.ecommerce.orderservice.exception.ConflictException;
 import com.ecommerce.orderservice.repository.CustomerOrderRepository;
 import com.ecommerce.orderservice.repository.OrderStatusHistoryRepository;
@@ -66,31 +67,72 @@ public class OrderLifecycleService {
         return queryService.toResponse(order, caller.isAdmin());
     }
 
-    // ---------- Admin ----------
+    // ---------- System: shipping-service events ----------
 
+    /**
+     * shipment-events from shipping-service, which ships and delivers paid orders:
+     * <ul>
+     *   <li>SHIPMENT_SHIPPED: CONFIRMED -> SHIPPED, with carrier, tracking number and estimated delivery;</li>
+     *   <li>SHIPMENT_OUT_FOR_DELIVERY / SHIPMENT_DELIVERY_FAILED: a line on the order's timeline;</li>
+     *   <li>SHIPMENT_DELIVERED: SHIPPED -> DELIVERED (also from CONFIRMED, if the shipped event was lost).</li>
+     * </ul>
+     * Events older than (or the same as) the last one applied are ignored, so repeats and stragglers change nothing.
+     * A parcel shipped just as the customer cancelled stays CANCELLED (and refunded); the timeline notes the recall.
+     */
     @Transactional
-    public OrderResponse ship(String orderNumber, AuthenticatedUser admin, ShipOrderRequest request) {
-        CustomerOrder order = lockVisible(orderNumber, admin);
-        if (order.getStatus() != OrderStatus.SHIPPED) {
-            requireMove(order, OrderStatus.SHIPPED, "");
-            if (request != null) {
-                order.setShipment(blankToNull(request.carrier()), blankToNull(request.trackingNumber()));
-            }
-            String note = order.getCarrier() == null ? "Shipped"
-                    : "Shipped with " + order.getCarrier() + (order.getTrackingNumber() == null ? "" : " (" + order.getTrackingNumber() + ")");
-            transitions.apply(order, OrderStatus.SHIPPED, admin.id(), note, clock.instant());
+    public void applyShipmentEvent(ShipmentEvent event) {
+        if (event.eventType() == null || event.orderId() == null) {
+            throw new IllegalArgumentException("Shipment event " + event.eventId() + " has no type or orderId");
         }
-        return queryService.toResponse(order, true);
+        CustomerOrder order = orderRepository.findByIdForUpdate(event.orderId()).orElse(null);
+        if (order == null) {
+            log.warn("{} for unknown order {}", event.eventType(), event.orderNumber());
+            return;
+        }
+        if (!order.acceptShipmentVersion(event.shipmentVersion())) {
+            log.debug("Order {}: shipment event {} v{} already applied", order.getOrderNumber(), event.eventType(),
+                    event.shipmentVersion());
+            return;
+        }
+        Instant now = clock.instant();
+        OrderStatus status = order.getStatus();
+        switch (event.eventType()) {
+            case EventTypes.SHIPMENT_SHIPPED -> {
+                if (status == OrderStatus.CONFIRMED) {
+                    markShipped(order, event, now);
+                } else if (status == OrderStatus.CANCELLED) {
+                    transitions.note(order, null, "The parcel left the warehouse after the order was cancelled - it is being recalled", now);
+                }
+            }
+            case EventTypes.SHIPMENT_OUT_FOR_DELIVERY -> {
+                if (status == OrderStatus.SHIPPED) {
+                    transitions.note(order, null, "Out for delivery", now);
+                }
+            }
+            case EventTypes.SHIPMENT_DELIVERY_FAILED -> {
+                if (status == OrderStatus.SHIPPED) {
+                    transitions.note(order, null, "Delivery attempt failed" + (event.note() == null ? "" : ": " + event.note())
+                            + " - we'll try again", now);
+                }
+            }
+            case EventTypes.SHIPMENT_DELIVERED -> {
+                if (status == OrderStatus.CONFIRMED) {
+                    markShipped(order, event, now);
+                }
+                if (order.getStatus() == OrderStatus.SHIPPED) {
+                    transitions.apply(order, OrderStatus.DELIVERED, null, "Delivered", now);
+                }
+            }
+            default -> log.debug("Ignoring shipment event {} for order {}", event.eventType(), event.orderNumber());
+        }
+        orderRepository.save(order); // keeps shipmentVersion even when nothing else changed
     }
 
-    @Transactional
-    public OrderResponse deliver(String orderNumber, AuthenticatedUser admin) {
-        CustomerOrder order = lockVisible(orderNumber, admin);
-        if (order.getStatus() != OrderStatus.DELIVERED) {
-            requireMove(order, OrderStatus.DELIVERED, "");
-            transitions.apply(order, OrderStatus.DELIVERED, admin.id(), "Delivered", clock.instant());
-        }
-        return queryService.toResponse(order, true);
+    private void markShipped(CustomerOrder order, ShipmentEvent event, Instant now) {
+        order.setShipment(event.carrier(), event.trackingNumber(), event.estimatedDeliveryDate());
+        String note = event.carrier() == null ? "Shipped"
+                : "Shipped with " + event.carrier() + (event.trackingNumber() == null ? "" : " (" + event.trackingNumber() + ")");
+        transitions.apply(order, OrderStatus.SHIPPED, null, note, now);
     }
 
     // ---------- System: payment-service events ----------
@@ -199,9 +241,5 @@ public class OrderLifecycleService {
             }
             log.debug("No reservation to release for {}", order.getOrderNumber());
         }
-    }
-
-    private static String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 }
