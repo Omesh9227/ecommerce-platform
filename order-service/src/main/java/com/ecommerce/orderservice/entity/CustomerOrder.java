@@ -20,6 +20,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -86,6 +87,14 @@ public class CustomerOrder {
 
     @Column(name = "tracking_number", length = 100)
     private String trackingNumber;
+
+    /** From shipping-service once the order ships. */
+    @Column(name = "estimated_delivery_date")
+    private LocalDate estimatedDeliveryDate;
+
+    /** shipmentVersion of the last shipment event applied (0 = none yet). */
+    @Column(name = "shipment_version", nullable = false)
+    private long shipmentVersion;
 
     @Column(name = "placed_at")
     private Instant placedAt;
@@ -183,8 +192,22 @@ public class CustomerOrder {
         this.paymentDueAt = paymentDueAt;
     }
 
-    public void setShipment(String carrier, String trackingNumber) {
+    public void setShipment(String carrier, String trackingNumber, LocalDate estimatedDeliveryDate) {
         this.carrier = carrier;
         this.trackingNumber = trackingNumber;
+        this.estimatedDeliveryDate = estimatedDeliveryDate;
+    }
+
+    /**
+     * Remembers the newest shipment event applied.
+     *
+     * @return false if this event is not newer than the last one (old or repeated: ignore it)
+     */
+    public boolean acceptShipmentVersion(long version) {
+        if (version <= shipmentVersion) {
+            return false;
+        }
+        shipmentVersion = version;
+        return true;
     }
 }

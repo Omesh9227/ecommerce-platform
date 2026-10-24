@@ -1171,7 +1171,93 @@
           ]
         },
         {
-          "name": "Admin: ship",
+          "name": "Wait for the shipment (ORDER_CONFIRMED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shipments/orders/{{orderNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shipments",
+                "orders",
+                "{{orderNumber}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// shipping-service created the shipment",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.code === 200; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('shipping-service created the shipment', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "    pm.collectionVariables.set('shipmentId', pm.response.json().data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Warehouse (admin): pack",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shipments/admin/{{shipmentId}}/pack",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shipments",
+                "admin",
+                "{{shipmentId}}",
+                "pack"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('PACKED', () => pm.expect(pm.response.json().data.status).to.eql('PACKED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Warehouse (admin): ship with Delhivery",
           "request": {
             "method": "POST",
             "header": [
@@ -1185,7 +1271,55 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/orders/admin/{{orderNumber}}/ship",
+              "raw": "{{baseUrl}}/api/v1/shipments/admin/{{shipmentId}}/ship",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shipments",
+                "admin",
+                "{{shipmentId}}",
+                "ship"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carrier\": \"Delhivery\",\n  \"location\": \"Bengaluru warehouse\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('trackingNumber', pm.response.json().data.trackingNumber);",
+                  "pm.test('SHIPPED with a tracking number', () => pm.expect(pm.response.json().data.trackingNumber).to.match(/^EC\\d{12}$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for the order to be SHIPPED (SHIPMENT_SHIPPED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1193,14 +1327,64 @@
                 "api",
                 "v1",
                 "orders",
+                "{{orderNumber}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// order is SHIPPED",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.status === 'SHIPPED'; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('order is SHIPPED', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Carrier (admin): out for delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shipments/admin/{{shipmentId}}/tracking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shipments",
                 "admin",
-                "{{orderNumber}}",
-                "ship"
+                "{{shipmentId}}",
+                "tracking"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"carrier\": \"Delhivery\",\n  \"trackingNumber\": \"DLV{{runTag}}\"\n}",
+              "raw": "{\n  \"status\": \"OUT_FOR_DELIVERY\",\n  \"location\": \"Koramangala\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1221,17 +1405,68 @@
           ]
         },
         {
-          "name": "Admin: deliver",
+          "name": "Carrier (admin): delivered",
           "request": {
             "method": "POST",
             "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
               {
                 "key": "Authorization",
                 "value": "Bearer {{adminToken}}"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/orders/admin/{{orderNumber}}/deliver",
+              "raw": "{{baseUrl}}/api/v1/shipments/admin/{{shipmentId}}/tracking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shipments",
+                "admin",
+                "{{shipmentId}}",
+                "tracking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DELIVERED\",\n  \"location\": \"Koramangala\",\n  \"note\": \"Received by the customer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('DELIVERED', () => pm.expect(pm.response.json().data.status).to.eql('DELIVERED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for the order to be DELIVERED (SHIPMENT_DELIVERED via Kafka)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderNumber}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1239,9 +1474,7 @@
                 "api",
                 "v1",
                 "orders",
-                "admin",
-                "{{orderNumber}}",
-                "deliver"
+                "{{orderNumber}}"
               ]
             }
           },
@@ -1251,7 +1484,18 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "// order is DELIVERED",
+                  "// Events travel through Kafka, so this can take a moment: retry this request until it's true.",
+                  "const attempts = Number(pm.collectionVariables.get('attempts') || 0);",
+                  "const done = (() => { try { return pm.response.json().data.status === 'DELIVERED'; } catch (e) { return false; } })();",
+                  "if (!done && attempts < 20) {",
+                  "    pm.collectionVariables.set('attempts', attempts + 1);",
+                  "    setTimeout(() => {}, 1000);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('attempts', 0);",
+                  "    pm.test('order is DELIVERED', () => pm.expect(done, 'still not true after 20 s - is Kafka running?').to.be.true);",
+                  "}"
                 ]
               }
             }
@@ -2123,6 +2367,14 @@
     },
     {
       "key": "buyerReviewId",
+      "value": ""
+    },
+    {
+      "key": "shipmentId",
+      "value": ""
+    },
+    {
+      "key": "trackingNumber",
       "value": ""
     }
   ]

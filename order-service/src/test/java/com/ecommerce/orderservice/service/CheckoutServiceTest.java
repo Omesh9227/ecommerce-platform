@@ -90,7 +90,7 @@ class CheckoutServiceTest {
 
     private static OrderResponse response(OrderStatus status, String reason) {
         return new OrderResponse(UUID.randomUUID(), "ORD-X", UUID.randomUUID(), status, reason, List.of(), 1,
-                BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.TEN, "INR", null, null, null, null, null, null, null,
+                BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.TEN, "INR", null, null, null, null, null, null, null, null,
                 null, null, null, List.of());
     }
 
