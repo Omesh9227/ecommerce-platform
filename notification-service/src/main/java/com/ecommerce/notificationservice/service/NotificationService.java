@@ -4,6 +4,7 @@ import com.ecommerce.notificationservice.entity.Notification;
 import com.ecommerce.notificationservice.entity.OrderSnapshot;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.ShipmentEvent;
 import com.ecommerce.notificationservice.event.WishlistEvent;
 import com.ecommerce.notificationservice.mail.EmailComposer;
 import com.ecommerce.notificationservice.mail.EmailContent;
@@ -87,6 +88,19 @@ public class NotificationService {
         }
         composer.forWishlistEvent(event).ifPresent(content ->
                 send(event.eventId(), event.eventType(), null, null, event.userId(), event.userEmail(), content));
+    }
+
+    @Transactional
+    public void onShipmentEvent(ShipmentEvent event) {
+        if (event.eventId() == null || event.eventType() == null || event.orderId() == null || event.userId() == null) {
+            throw new IllegalArgumentException("Shipment event " + event.eventId() + " is missing required fields");
+        }
+        if (notificationRepository.existsByEventId(event.eventId())) {
+            return;
+        }
+        composer.forShipmentEvent(event).ifPresent(content ->
+                send(event.eventId(), event.eventType(), event.orderId(), event.orderNumber(), event.userId(),
+                        event.userEmail(), content));
     }
 
     // ---------- Helpers ----------

@@ -8,7 +8,8 @@ Events: `order-events` on Kafka.
 Postman ──► api-gateway :8080 ──► order-service :8085 ──► product-service :8082    GET /api/v1/products/lookup (current prices)
               │                        │              └──► inventory-service :8083  reservations (order-service's SERVICE token)
               │                        ├──► PostgreSQL ecommerce_order_db (orders, items, status history, outbox)
-              │                        └──► Kafka order-events (ORDER_PLACED / CONFIRMED / SHIPPED / DELIVERED / CANCELLED)
+              │                        ├──► Kafka order-events (ORDER_PLACED / CONFIRMED / SHIPPED / DELIVERED / CANCELLED)
+              │                        └◄── Kafka payment-events (payment-service), shipment-events (shipping-service)
               ├─ /api/v1/orders/**        → any logged-in customer or admin
               └─ /api/v1/orders/admin/**  → ADMIN only
 ```
@@ -22,6 +23,8 @@ CREATED ──► PENDING_PAYMENT ──► CONFIRMED ──► SHIPPED ──�
 CHECKOUT_FAILED  CANCELLED ◄─────┘   (customer or admin before shipping; unpaid orders also after 30 min)
 
 PENDING_PAYMENT → CONFIRMED happens when payment-service reports PAYMENT_SUCCEEDED.
+CONFIRMED → SHIPPED → DELIVERED happens when shipping-service reports SHIPMENT_SHIPPED / SHIPMENT_DELIVERED
+(it creates the shipment from ORDER_CONFIRMED; the warehouse packs and ships it there).
 Cancelling a CONFIRMED (paid) order returns its stock and payment-service refunds it (PAYMENT_REFUNDED → timeline).
 ```
 
@@ -50,12 +53,14 @@ Cancelling a CONFIRMED (paid) order returns its stock and payment-service refund
 | Method | Path                                              | Notes |
 |--------|---------------------------------------------------|-------|
 | GET    | `/api/v1/orders/admin`                            | All orders incl. internal statuses. `status`, `userId`, paging |
-| POST   | `/api/v1/orders/admin/{orderNumber}/ship`         | Optional `{carrier, trackingNumber}` |
-| POST   | `/api/v1/orders/admin/{orderNumber}/deliver`      | |
 | POST   | `/api/v1/orders/admin/{orderNumber}/cancel`       | Same rules as the customer's cancel |
 
 Payment: `POST /api/v1/payments/orders/{orderNumber}/pay` on payment-service (see its README). The order is
 confirmed a moment later, when its `PAYMENT_SUCCEEDED` event arrives.
+
+Shipping and delivery: in shipping-service (`/api/v1/shipments/admin/...`, see its README). The order follows its
+events: `SHIPMENT_SHIPPED` → SHIPPED with `carrier`, `trackingNumber` and `estimatedDeliveryDate`;
+out for delivery and missed deliveries become timeline lines; `SHIPMENT_DELIVERED` → DELIVERED.
 
 Every status change is idempotent: repeating it returns the order unchanged with 200.
 
@@ -112,15 +117,16 @@ mvn verify   # + integration tests: ecommerce_order_test_db + in-memory Kafka + 
 
 Covered: checkout and its totals, idempotent retries, a double-click (6 parallel requests with one key → one order,
 one reservation), every refusal (empty cart, stock, price change, discontinued product, invalid address/key),
-services being down and recovering, cancel/pay/ship/deliver, access rules, events on Kafka, and the expiry job
-(with a test clock).
+services being down and recovering, cancel and pay, shipment events (shipped, scans, delivered, repeated and late
+events, delivered without shipped, shipped after a cancel, malformed events to `shipment-events.DLT`), access rules,
+events on Kafka, and the expiry job (with a test clock).
 
 ## Postman
 
 Import `order-service/postman/order-service.postman_collection.json` and run it with the **Collection Runner**.
 It goes through the real services end to end: creates products and stock, fills the cart, checks out (also with
-a wrong total and with a repeated key), cancels and sees the stock come back, then pays, ships and delivers a
-second order, and finally shows that a stock drop blocks checkout.
+a wrong total and with a repeated key), cancels and sees the stock come back, then pays a second order, which
+shipping-service packs, ships and delivers while the order follows, and finally shows that a stock drop blocks checkout.
 
 ## Design notes
 
@@ -137,7 +143,12 @@ second order, and finally shows that a stock drop blocks checkout.
 - **Transactional outbox** for `order-events` (key = order id, so one order's events stay in order); each event
   carries `orderVersion` so consumers can ignore duplicates. Read by payment-service and notification-service, so
   events carry what emails need: the customer's email, items with names and prices, carrier/tracking once shipped.
+  Since Phase 11 they also carry the `shippingAddress` (shipping-service builds the shipment from `ORDER_CONFIRMED`)
+  and the `estimatedDeliveryDate` once shipped.
 - **Consumes `payment-events`**: `PAYMENT_SUCCEEDED` confirms the order (if it's still waiting for payment - if it was
   cancelled meanwhile, payment-service refunds on its own), `PAYMENT_REFUNDED` adds a timeline entry. Failures retry
   with exponential back-off (~30 s), then go to `payment-events.DLT`.
+- **Consumes `shipment-events`**: each carries `shipmentVersion`; the order keeps the last one applied
+  (`shipment_version`) and ignores older or repeated events. A parcel shipped just as the customer cancelled leaves the
+  order CANCELLED (refunded) with a "being recalled" timeline line. Failures go to `shipment-events.DLT`.
 - **Audit trail**: `order_status_history` records every change, who made it and why; shown as the order's timeline.

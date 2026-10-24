@@ -15,6 +15,10 @@ public final class EventTypes {
     public static final String PAYMENT_FAILED = "PAYMENT_FAILED";
     public static final String PAYMENT_REFUNDED = "PAYMENT_REFUNDED";
 
+    // shipment-events (shipping-service). Shipped and delivered emails come from the order's own events.
+    public static final String SHIPMENT_OUT_FOR_DELIVERY = "SHIPMENT_OUT_FOR_DELIVERY";
+    public static final String SHIPMENT_DELIVERY_FAILED = "SHIPMENT_DELIVERY_FAILED";
+
     // wishlist-events (wishlist-service)
     public static final String WISHLIST_PRICE_DROPPED = "WISHLIST_PRICE_DROPPED";
 

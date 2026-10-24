@@ -4,6 +4,7 @@ import com.ecommerce.notificationservice.config.NotificationProperties;
 import com.ecommerce.notificationservice.event.EventTypes;
 import com.ecommerce.notificationservice.event.OrderEvent;
 import com.ecommerce.notificationservice.event.PaymentEvent;
+import com.ecommerce.notificationservice.event.ShipmentEvent;
 import com.ecommerce.notificationservice.event.WishlistEvent;
 import org.junit.jupiter.api.Test;
 import org.thymeleaf.spring6.SpringTemplateEngine;
@@ -27,7 +28,8 @@ class EmailComposerTest {
 
     private OrderEvent order(String type, String carrier, String tracking, String reason) {
         return new OrderEvent(UUID.randomUUID(), type, UUID.randomUUID(), "ORD-ABC123456789", UUID.randomUUID(),
-                "omesh@example.com", "X", reason, carrier, tracking, new BigDecimal("1999.50"), "INR", items, 1);
+                "omesh@example.com", "X", reason, carrier, tracking,
+                carrier == null ? null : java.time.LocalDate.of(2026, 10, 27), new BigDecimal("1999.50"), "INR", items, 1);
     }
 
     private PaymentEvent payment(String type, String reason) {
@@ -49,10 +51,32 @@ class EmailComposerTest {
     @Test
     void shipped_showsCarrierAndTracking_cancelledShowsTheReason() {
         EmailContent shipped = composer.forOrderEvent(order(EventTypes.ORDER_SHIPPED, "Delhivery", "DLV123", null)).orElseThrow();
-        assertThat(shipped.details()).extracting(EmailContent.Detail::value).contains("Delhivery", "DLV123");
+        assertThat(shipped.details()).extracting(EmailContent.Detail::value).contains("Delhivery", "DLV123", "Tue, 27 Oct 2026");
 
         EmailContent cancelled = composer.forOrderEvent(order(EventTypes.ORDER_CANCELLED, null, null, "Payment was not received in time")).orElseThrow();
         assertThat(cancelled.intro()).isEqualTo("Your order has been cancelled: Payment was not received in time.");
+    }
+
+    private ShipmentEvent shipment(String type, String note, int failedAttempts) {
+        return new ShipmentEvent(UUID.randomUUID(), type, UUID.randomUUID(), "ORD-ABC123456789", UUID.randomUUID(),
+                "omesh@example.com", "Delhivery", "EC482019375610", java.time.LocalDate.of(2026, 10, 27), note, failedAttempts);
+    }
+
+    @Test
+    void outForDelivery_andMissedDelivery() {
+        EmailContent today = composer.forShipmentEvent(shipment(EventTypes.SHIPMENT_OUT_FOR_DELIVERY, null, 0)).orElseThrow();
+        assertThat(today.subject()).isEqualTo("Your order ORD-ABC123456789 is out for delivery");
+        assertThat(today.heading()).isEqualTo("Arriving today");
+        assertThat(today.details()).extracting(EmailContent.Detail::value).contains("Delhivery", "EC482019375610");
+
+        EmailContent missed = composer.forShipmentEvent(shipment(EventTypes.SHIPMENT_DELIVERY_FAILED, "Customer not available", 2)).orElseThrow();
+        assertThat(missed.subject()).isEqualTo("We missed you - delivery of order ORD-ABC123456789");
+        assertThat(missed.intro()).isEqualTo("Delhivery tried to deliver your order but couldn't: Customer not available. They'll try again soon.");
+        assertThat(missed.details()).contains(new EmailContent.Detail("Attempt", "2"));
+
+        // shipped / delivered emails come from the order's own events, so the customer gets one email per step
+        assertThat(composer.forShipmentEvent(shipment("SHIPMENT_SHIPPED", null, 0))).isEmpty();
+        assertThat(composer.forShipmentEvent(shipment("SHIPMENT_DELIVERED", null, 0))).isEmpty();
     }
 
     @Test

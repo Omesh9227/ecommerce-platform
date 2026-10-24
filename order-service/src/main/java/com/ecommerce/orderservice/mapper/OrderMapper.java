@@ -37,6 +37,7 @@ public class OrderMapper {
                 order.getPaymentDueAt(),
                 order.getCarrier(),
                 order.getTrackingNumber(),
+                order.getEstimatedDeliveryDate(),
                 order.getPlacedAt(),
                 order.getConfirmedAt(),
                 order.getShippedAt(),

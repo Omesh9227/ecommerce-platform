@@ -31,7 +31,8 @@ public class GatewayRoutesConfig {
                                @Value("${services.payment-service.url}") String paymentServiceUrl,
                                @Value("${services.notification-service.url}") String notificationServiceUrl,
                                @Value("${services.wishlist-service.url}") String wishlistServiceUrl,
-                               @Value("${services.review-service.url}") String reviewServiceUrl) {
+                               @Value("${services.review-service.url}") String reviewServiceUrl,
+                               @Value("${services.shipping-service.url}") String shippingServiceUrl) {
         return builder.routes()
                 .route("user-service", route -> route
                         .path("/api/v1/auth/**", "/api/v1/users/**", "/api/v1/admin/**")
@@ -69,6 +70,10 @@ public class GatewayRoutesConfig {
                         .path("/api/v1/reviews/**")
                         .filters(filter -> filter.dedupeResponseHeader(CORS_RESPONSE_HEADERS, "RETAIN_FIRST"))
                         .uri(reviewServiceUrl))
+                .route("shipping-service", route -> route
+                        .path("/api/v1/shipments/**")
+                        .filters(filter -> filter.dedupeResponseHeader(CORS_RESPONSE_HEADERS, "RETAIN_FIRST"))
+                        .uri(shippingServiceUrl))
                 .build();
     }
 }

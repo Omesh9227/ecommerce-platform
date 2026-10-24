@@ -1,6 +1,7 @@
 package com.ecommerce.notificationservice.event;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,6 +17,7 @@ public record OrderEvent(
         String reason,
         String carrier,
         String trackingNumber,
+        LocalDate estimatedDeliveryDate,
         BigDecimal totalAmount,
         String currency,
         List<Item> items,
