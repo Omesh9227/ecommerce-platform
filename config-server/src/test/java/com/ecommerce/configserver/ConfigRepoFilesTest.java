@@ -46,7 +46,7 @@ class ConfigRepoFilesTest {
     void everyServiceFile_isNamedAfterAService() throws IOException {
         List<String> services = List.of("application", "api-gateway", "user-service", "product-service",
                 "inventory-service", "cart-service", "order-service", "payment-service", "notification-service",
-                "wishlist-service", "review-service", "shipping-service", "search-service");
+                "wishlist-service", "review-service", "shipping-service", "search-service", "recommendation-service");
         try (Stream<Path> files = Files.list(CONFIG_REPO)) {
             List<String> names = files.map(f -> f.getFileName().toString())
                     .filter(name -> name.endsWith(".properties"))

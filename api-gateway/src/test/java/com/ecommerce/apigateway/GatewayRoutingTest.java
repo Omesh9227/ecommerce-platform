@@ -43,6 +43,7 @@ class GatewayRoutingTest {
         registry.add("services.review-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.shipping-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.search-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.recommendation-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -326,6 +327,25 @@ class GatewayRoutingTest {
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
                 .exchange()
                 .expectStatus().isOk();
+    }
+
+    @Test
+    void productPageRecommendations_arePublic_personalOnesNeedAToken() {
+        webTestClient.get().uri("/api/v1/recommendations/products/" + UUID.randomUUID() + "/bought-together")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.userId").doesNotExist();
+        webTestClient.get().uri("/api/v1/recommendations/trending").exchange().expectStatus().isOk();
+        webTestClient.get().uri("/api/v1/recommendations/for-you").exchange().expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/recommendations/for-you")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.userId").isEqualTo(customerId.toString());
+        webTestClient.get().uri("/api/v1/recommendations/admin/stats")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
     }
 
     @Test

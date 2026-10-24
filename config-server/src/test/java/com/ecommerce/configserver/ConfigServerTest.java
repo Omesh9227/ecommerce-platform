@@ -53,7 +53,7 @@ class ConfigServerTest {
     @ParameterizedTest
     @ValueSource(strings = {"api-gateway", "user-service", "product-service", "inventory-service", "cart-service",
             "order-service", "payment-service", "notification-service", "wishlist-service", "review-service",
-            "shipping-service", "search-service"})
+            "shipping-service", "search-service", "recommendation-service"})
     void everyService_getsTheSharedSettings(String service) throws Exception {
         Map<String, String> config = configFor(service);
 
@@ -83,7 +83,9 @@ class ConfigServerTest {
             "shipping-service,     app.shipping.time-zone,                   Asia/Kolkata",
             "shipping-service,     app.shipping.delivery-days.other,         5",
             "search-service,       app.search.price-ranges,                  '500,1000,5000,20000'",
-            "search-service,       app.search.currency,                      ${shop.currency}"
+            "search-service,       app.search.currency,                      ${shop.currency}",
+            "recommendation-service, app.recommendation.trending-days,       7",
+            "recommendation-service, app.recommendation.currency,            ${shop.currency}"
     })
     void eachService_getsItsOwnSettings(String service, String key, String value) throws Exception {
         assertThat(configFor(service)).containsEntry(key, value);
