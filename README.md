@@ -21,12 +21,13 @@ Docker/Docker Compose is added only after all services work locally.
 | review-service  | 8089 | `ecommerce_review_db`  | Phase 10 — complete (ratings, verified purchases, helpful votes, moderation) |
 | shipping-service | 8090 | `ecommerce_shipping_db` | Phase 11 — complete (packing, carriers, tracking, delivery estimates) |
 | search-service  | 8091 | `ecommerce_search_db`  | Phase 12 — complete (full-text search, typo correction, filters with counts, suggestions) |
+| recommendation-service | 8092 | `ecommerce_recommendation_db` | Phase 13 — complete (bought together, also viewed, similar, trending, for you) |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → review-service → shipping-service → search-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → review-service → shipping-service → search-service → recommendation-service → api-gateway.
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
-Still to come before Docker: recommendation and admin services, then
+Still to come before Docker: the admin service, then
 Prometheus + Grafana. Docker, Kubernetes, Jenkins and GCP follow once every service runs locally.
 
 ## Service discovery and configuration (Phase 8)
@@ -84,13 +85,15 @@ Topics (created by the services on startup, 3 partitions, key = productId so eac
 `order-events.notification.DLT`, `payment-events.notification.DLT`, `wishlist-events.notification.DLT`,
 wishlist-service's `product-events.wishlist.DLT`, review-service's `order-events.review.DLT`, product-service's
 `review-events.DLT`, shipping-service's `order-events.shipping.DLT`, order-service's `shipment-events.DLT`,
-notification-service's `shipment-events.notification.DLT`, and search-service's `<topic>.search.DLT` for each topic it reads) for messages that could not be processed.
+notification-service's `shipment-events.notification.DLT`, and search-service's / recommendation-service's
+`<topic>.search.DLT` / `<topic>.recommendation.DLT` for each topic they read) for messages that could not be processed.
 `wishlist-events` (key = user id) carries price-drop alerts from wishlist-service to notification-service.
 `review-events` (key = product id) carries each product's new rating from review-service to product-service.
 `shipment-events` (key = order id) carries shipped / out for delivery / missed delivery / delivered from shipping-service to
 order-service and notification-service.
 `category-events` (key = category id) carries category changes from product-service to search-service, which builds its
-search index from product-, category-, inventory- and review-events. If Kafka is stopped, the services keep working: events wait in each
+search index from product-, category-, inventory- and review-events. recommendation-service reads the same four plus
+order-events (paid and cancelled orders). If Kafka is stopped, the services keep working: events wait in each
 service's `outbox_events` table and are sent when Kafka is back.
 
 Integration tests start their own in-memory Kafka, so `mvn verify` doesn't need Kafka running.
