@@ -16,14 +16,16 @@ Postman / frontend ──► api-gateway :8080 ──► user-service :8081
                                           ├──► review-service :8089
                                           ├──► shipping-service :8090
                                           ├──► search-service :8091
-                                          └──► recommendation-service :8092
+                                          ├──► recommendation-service :8092
+                                          └──► admin-service :8093
                          │
                          ├─ CORS (preflight answered here)
                          ├─ JWT check (signature, expiry, issuer)
                          ├─ ADMIN role check for /api/v1/admin/**, /api/v1/inventory/**, /api/v1/orders/admin/**,
                          │                   /api/v1/payments/admin/**, /api/v1/notifications/admin/**,
                          │                   /api/v1/reviews/admin/**, /api/v1/shipments/admin/**,
-                         │                   /api/v1/search/admin/**, /api/v1/recommendations/admin/**
+                         │                   /api/v1/search/admin/**, /api/v1/recommendations/admin/**,
+                         │                   /api/v1/dashboard/**
                          ├─ X-User-Id / X-User-Email / X-User-Role headers to services
                          ├─ X-Correlation-Id on every request and response
                          └─ JSON errors: 401, 403, 404, 503, 504
@@ -58,12 +60,13 @@ Postman / frontend ──► api-gateway :8080 ──► user-service :8081
 | `/api/v1/recommendations/products/**`, `/trending` | recommendation-service | GET public |
 | `/api/v1/recommendations/**` | recommendation-service | valid JWT (for you, views, recently viewed) |
 | `/api/v1/recommendations/admin/**` | recommendation-service | valid JWT, ADMIN (statistics) |
+| `/api/v1/dashboard/**`  | admin-service   | valid JWT, ADMIN (sales, orders, stock, activity) |
 
 New services are added as routes in `config/GatewayRoutesConfig.java`.
 
 ## Run
 
-1. Start **discovery-server** (8761) and **config-server** (8888), then **user-service** (8081), **product-service** (8082), **inventory-service** (8083), **cart-service** (8084), **order-service** (8085), **payment-service** (8086), **notification-service** (8087), **wishlist-service** (8088), **review-service** (8089), **shipping-service** (8090), **search-service** (8091) and **recommendation-service** (8092).
+1. Start **discovery-server** (8761) and **config-server** (8888), then **user-service** (8081), **product-service** (8082), **inventory-service** (8083), **cart-service** (8084), **order-service** (8085), **payment-service** (8086), **notification-service** (8087), **wishlist-service** (8088), **review-service** (8089), **shipping-service** (8090), **search-service** (8091), **recommendation-service** (8092) and **admin-service** (8093).
 2. Start the gateway: run `ApiGatewayApplication` in IntelliJ, or `mvn spring-boot:run` from this folder.
 3. Check http://localhost:8080/actuator/health → `{"status":"UP"}`.
 4. Check routes: http://localhost:8080/actuator/gateway/routes

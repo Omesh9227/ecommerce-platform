@@ -44,6 +44,7 @@ class GatewayRoutingTest {
         registry.add("services.shipping-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.search-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.recommendation-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.admin-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -346,6 +347,20 @@ class GatewayRoutingTest {
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
                 .exchange()
                 .expectStatus().isForbidden();
+    }
+
+    @Test
+    void dashboard_isForAdminsOnly() {
+        webTestClient.get().uri("/api/v1/dashboard/summary").exchange().expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/dashboard/summary")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+        webTestClient.get().uri("/api/v1/dashboard/sales/daily.csv?from=2026-10-01")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.path").isEqualTo("/api/v1/dashboard/sales/daily.csv");
     }
 
     @Test
