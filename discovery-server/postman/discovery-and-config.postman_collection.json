@@ -95,7 +95,7 @@
                   "const status = {};",
                   "apps.forEach(app => status[app.name] = [].concat(app.instance).map(i => i.status));",
                   "console.log('Registered:', status);",
-                  "const expected = [\"CONFIG-SERVER\", \"API-GATEWAY\", \"USER-SERVICE\", \"PRODUCT-SERVICE\", \"INVENTORY-SERVICE\", \"CART-SERVICE\", \"ORDER-SERVICE\", \"PAYMENT-SERVICE\", \"NOTIFICATION-SERVICE\", \"WISHLIST-SERVICE\", \"REVIEW-SERVICE\", \"SHIPPING-SERVICE\"];",
+                  "const expected = [\"CONFIG-SERVER\", \"API-GATEWAY\", \"USER-SERVICE\", \"PRODUCT-SERVICE\", \"INVENTORY-SERVICE\", \"CART-SERVICE\", \"ORDER-SERVICE\", \"PAYMENT-SERVICE\", \"NOTIFICATION-SERVICE\", \"WISHLIST-SERVICE\", \"REVIEW-SERVICE\", \"SHIPPING-SERVICE\", \"SEARCH-SERVICE\"];",
                   "expected.forEach(name => pm.test(`${name} is registered and UP`, () => {",
                   "    pm.expect(status[name], `${name} is not in Eureka - is it running?`).to.be.an('array');",
                   "    pm.expect(status[name]).to.include('UP');",
@@ -323,7 +323,7 @@
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
                   "const routes = pm.response.json();",
-                  "pm.test('10 routes', () => pm.expect(routes.length).to.eql(10));",
+                  "pm.test('11 routes', () => pm.expect(routes.length).to.eql(11));",
                   "routes.forEach(r => pm.test(`${r.route_id} -> ${r.uri}`, () => pm.expect(r.uri).to.eql(`lb://${r.route_id}`)));"
                 ]
               }
