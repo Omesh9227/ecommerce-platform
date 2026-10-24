@@ -9,6 +9,8 @@ import com.ecommerce.productservice.dto.response.PageResponse;
 import com.ecommerce.productservice.dto.response.ProductResponse;
 import com.ecommerce.productservice.entity.ProductStatus;
 import com.ecommerce.productservice.security.AuthenticatedUser;
+import com.ecommerce.productservice.dto.response.RepublishResponse;
+import com.ecommerce.productservice.service.CatalogRepublisher;
 import com.ecommerce.productservice.service.ProductService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -48,6 +50,7 @@ import java.util.UUID;
 public class ProductController {
 
     private final ProductService productService;
+    private final CatalogRepublisher catalogRepublisher;
 
     @Operation(summary = "Search and list products",
             description = "Paginated, newest first by default. Customers only see ACTIVE products. "
@@ -166,5 +169,13 @@ public class ProductController {
             @Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser currentUser) {
         productService.delete(id, currentUser.id());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Send the whole catalog again on Kafka (ADMIN)",
+            description = "CATEGORY_UPDATED for every category and PRODUCT_UPDATED for every product, with their current "
+                    + "versions. Fills a new consumer (e.g. search-service) with products that existed before it. Safe to repeat.")
+    @PostMapping("/events/republish")
+    public ResponseEntity<ApiResult<RepublishResponse>> republishEvents() {
+        return ResponseEntity.ok(ApiResult.of("Catalog events queued", catalogRepublisher.republishAll()));
     }
 }

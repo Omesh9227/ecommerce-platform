@@ -9,7 +9,8 @@ Browser / Postman ──► api-gateway :8080 ──► product-service :8082 �
                         ├─ GET /api/v1/products/**, /api/v1/categories/**   → public
                         └─ POST / PUT / DELETE on those paths              → ADMIN only
 
-product-service ── product-events ──► Kafka ──► inventory-service, wishlist-service (price drops)
+product-service ── product-events ──► Kafka ──► inventory-service, wishlist-service (price drops), search-service
+product-service ── category-events ─► Kafka ──► search-service (category names and tree)
 product-service ◄── inventory-events ── Kafka ◄── inventory-service   (availableQuantity / inStock)
 product-service ◄── review-events ──── Kafka ◄── review-service      (averageRating / reviewCount)
 ```
@@ -29,6 +30,7 @@ product-service ◄── review-events ──── Kafka ◄── review-serv
 | PUT    | `/api/v1/products/{id}`      | ADMIN  | Replaces all fields; status kept if omitted                 |
 | DELETE | `/api/v1/products/{id}`      | ADMIN  | Soft delete → status `DISCONTINUED`                         |
 | GET    | `/api/v1/products/lookup?ids=a,b,c` | public | Up to 50 ids in one call; returns only the ACTIVE ones (used by cart-service) |
+| POST   | `/api/v1/products/events/republish` | ADMIN | Sends every category and product again on Kafka (current versions), e.g. to fill search-service. Safe to repeat |
 
 ### Search and filters (`GET /api/v1/products`)
 
@@ -63,7 +65,8 @@ product-service ◄── review-events ──── Kafka ◄── review-serv
 
 | Topic              | Direction | Events                                                     |
 |--------------------|-----------|------------------------------------------------------------|
-| `product-events`   | publishes | `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DISCONTINUED` (key = productId), with `price` and `sellingPrice` |
+| `product-events`   | publishes | `PRODUCT_CREATED`, `PRODUCT_UPDATED`, `PRODUCT_DISCONTINUED` (key = productId), with `price`, `sellingPrice` and (since Phase 12) `brand`, `description`, `categoryId`, `discountPercent`, `imageUrls`, `createdAt` |
+| `category-events`  | publishes | `CATEGORY_CREATED`, `CATEGORY_UPDATED` (rename / move), `CATEGORY_DELETED` (key = categoryId), with `name`, `parentId`, `categoryVersion` |
 | `inventory-events` | consumes  | `INVENTORY_UPDATED` → sets `availableQuantity` / `inStock` on the product |
 | `review-events`    | consumes  | `PRODUCT_RATING_UPDATED` → sets `averageRating` / `reviewCount` (only if `ratingVersion` is newer) |
 

@@ -42,6 +42,7 @@ class GatewayRoutingTest {
         registry.add("services.wishlist-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.review-service.url", () -> StubDownstreamServer.baseUrl(downstream));
         registry.add("services.shipping-service.url", () -> StubDownstreamServer.baseUrl(downstream));
+        registry.add("services.search-service.url", () -> StubDownstreamServer.baseUrl(downstream));
     }
 
     @AfterAll
@@ -304,6 +305,27 @@ class GatewayRoutingTest {
         webTestClient.post().uri("/api/v1/shipments/track/EC482019375610")
                 .exchange()
                 .expectStatus().isUnauthorized(); // only GET is public
+    }
+
+    @Test
+    void search_isPublic_butItsAdminApiIsNot() {
+        webTestClient.get().uri("/api/v1/search/products?q=pixel&brand=Google")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.path").isEqualTo("/api/v1/search/products")
+                .jsonPath("$.userId").doesNotExist();
+        webTestClient.get().uri("/api/v1/search/suggest?q=pix").exchange().expectStatus().isOk();
+        webTestClient.get().uri("/api/v1/search/popular").exchange().expectStatus().isOk();
+        webTestClient.get().uri("/api/v1/search/admin/stats").exchange().expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/search/admin/stats")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken())
+                .exchange()
+                .expectStatus().isForbidden();
+        webTestClient.get().uri("/api/v1/search/admin/stats")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken())
+                .exchange()
+                .expectStatus().isOk();
     }
 
     @Test

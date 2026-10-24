@@ -5,9 +5,11 @@ import com.ecommerce.productservice.dto.response.CategoryResponse;
 import com.ecommerce.productservice.dto.response.CategorySummary;
 import com.ecommerce.productservice.dto.response.CategoryTreeNode;
 import com.ecommerce.productservice.entity.Category;
+import com.ecommerce.productservice.event.EventTypes;
 import com.ecommerce.productservice.exception.BadRequestException;
 import com.ecommerce.productservice.exception.ConflictException;
 import com.ecommerce.productservice.exception.ResourceNotFoundException;
+import com.ecommerce.productservice.outbox.ProductEventPublisher;
 import com.ecommerce.productservice.repository.CategoryRepository;
 import com.ecommerce.productservice.repository.ProductRepository;
 import com.ecommerce.productservice.service.CategoryService;
@@ -39,6 +41,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
+    private final ProductEventPublisher eventPublisher;
 
     // ---------- Read ----------
 
@@ -84,6 +87,7 @@ public class CategoryServiceImpl implements CategoryService {
                 .build();
 
         Category saved = saveAndFlush(category);
+        eventPublisher.category(EventTypes.CATEGORY_CREATED, saved, versionOf(saved));
         log.info("Category created id={} parentId={}", saved.getId(), request.parentId());
         return toResponse(saved, List.of());
     }
@@ -111,6 +115,7 @@ public class CategoryServiceImpl implements CategoryService {
         category.setParent(parent);
 
         Category saved = saveAndFlush(category);
+        eventPublisher.category(EventTypes.CATEGORY_UPDATED, saved, versionOf(saved));
         log.info("Category updated id={}", id);
 
         List<Category> children = childrenByParent(categoryRepository.findAll()).getOrDefault(id, List.of());
@@ -127,11 +132,16 @@ public class CategoryServiceImpl implements CategoryService {
         if (productRepository.existsByCategory_Id(id)) {
             throw new ConflictException("Category has products. Move or delete them first.");
         }
+        eventPublisher.category(EventTypes.CATEGORY_DELETED, category, versionOf(category) + 1);
         categoryRepository.delete(category);
         log.info("Category deleted id={}", id);
     }
 
     // ---------- Helpers ----------
+
+    private static long versionOf(Category category) {
+        return category.getVersion() == null ? 0 : category.getVersion();
+    }
 
     private Category findCategory(UUID id) {
         return categoryRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException(CATEGORY, id));

@@ -28,6 +28,11 @@ public class KafkaConfig {
         return TopicBuilder.name(topics.productEvents()).partitions(topics.partitions()).replicas(1).build();
     }
 
+    @Bean
+    public NewTopic categoryEventsTopic(KafkaTopicsProperties topics) {
+        return TopicBuilder.name(topics.categoryEvents()).partitions(topics.partitions()).replicas(1).build();
+    }
+
     /** Dead-letter topic for inventory events this service could not process. */
     @Bean
     public NewTopic inventoryEventsDeadLetterTopic(KafkaTopicsProperties topics) {

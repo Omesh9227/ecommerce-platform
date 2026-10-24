@@ -1,7 +1,9 @@
 package com.ecommerce.productservice.outbox;
 
 import com.ecommerce.productservice.config.KafkaTopicsProperties;
+import com.ecommerce.productservice.entity.Category;
 import com.ecommerce.productservice.entity.Product;
+import com.ecommerce.productservice.event.CategoryEvent;
 import com.ecommerce.productservice.event.EventTypes;
 import com.ecommerce.productservice.event.ProductEvent;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,12 @@ public class ProductEventPublisher {
 
     public void productDiscontinued(Product product) {
         write(EventTypes.PRODUCT_DISCONTINUED, product);
+    }
+
+    /** CATEGORY_CREATED / CATEGORY_UPDATED / CATEGORY_DELETED on category-events (key = category id). */
+    public void category(String eventType, Category category, long version) {
+        outboxWriter.write(topics.categoryEvents(), category.getId().toString(), eventType,
+                CategoryEvent.of(eventType, category, version));
     }
 
     private void write(String eventType, Product product) {

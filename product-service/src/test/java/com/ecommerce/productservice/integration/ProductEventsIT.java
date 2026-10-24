@@ -63,6 +63,14 @@ class ProductEventsIT extends AbstractIntegrationTest {
         assertThat(created.get("sellingPrice").decimalValue()).isEqualByComparingTo("59999");
         assertThat(updated.get("sellingPrice").decimalValue()).isEqualByComparingTo("79999");
 
+        // Everything search-service needs to index the product without calling back
+        assertThat(created.get("brand").asText()).isEqualTo("Google");
+        assertThat(created.get("description").asText()).isEqualTo("Test description");
+        assertThat(created.get("categoryId").asText()).isEqualTo(mobiles.toString());
+        assertThat(created.get("discountPercent").decimalValue()).isEqualByComparingTo("0");
+        assertThat(created.get("imageUrls").get(0).asText()).isEqualTo("https://cdn.example.com/pixel-8.jpg");
+        assertThat(created.get("createdAt").asText()).isNotBlank();
+
         // Versions only go up, so consumers can drop out-of-date events
         long v1 = created.get("productVersion").asLong();
         long v2 = updated.get("productVersion").asLong();
@@ -87,6 +95,6 @@ class ProductEventsIT extends AbstractIntegrationTest {
                         .content(json(productRequest("pixel-8", "Copy", "Google", mobiles, "100", null, null))))
                 .andExpect(status().isConflict());
 
-        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(outboxEventRepository.findAll()).filteredOn(e -> e.getTopic().equals("product-events")).hasSize(1);
     }
 }

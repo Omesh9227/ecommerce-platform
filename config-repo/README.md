@@ -15,6 +15,7 @@ use `${PLACEHOLDERS}`, which each service fills in from `.env` (a test fails the
 | `wishlist-service.properties` | wishlist-service | max saved products, price-drop email threshold (%) |
 | `review-service.properties` | review-service | whether only buyers may review |
 | `shipping-service.properties` | shipping-service | warehouse PIN code and time zone, delivery days by distance, carriers |
+| `search-service.properties` | search-service | price filter ranges, page size, suggestions, popular-search window |
 
 A service's own file wins over `application.properties`; both win over the service's
 `src/main/resources/application.properties`.
