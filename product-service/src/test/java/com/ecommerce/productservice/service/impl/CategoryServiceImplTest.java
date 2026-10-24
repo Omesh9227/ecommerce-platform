@@ -7,6 +7,7 @@ import com.ecommerce.productservice.entity.Category;
 import com.ecommerce.productservice.exception.BadRequestException;
 import com.ecommerce.productservice.exception.ConflictException;
 import com.ecommerce.productservice.exception.ResourceNotFoundException;
+import com.ecommerce.productservice.outbox.ProductEventPublisher;
 import com.ecommerce.productservice.repository.CategoryRepository;
 import com.ecommerce.productservice.repository.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +37,8 @@ class CategoryServiceImplTest {
     private CategoryRepository categoryRepository;
     @Mock
     private ProductRepository productRepository;
+    @Mock
+    private ProductEventPublisher eventPublisher;
     @InjectMocks
     private CategoryServiceImpl categoryService;
 

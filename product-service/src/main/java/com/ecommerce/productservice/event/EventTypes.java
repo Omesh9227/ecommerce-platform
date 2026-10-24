@@ -11,6 +11,10 @@ public final class EventTypes {
     public static final String PRODUCT_UPDATED = "PRODUCT_UPDATED";
     public static final String PRODUCT_DISCONTINUED = "PRODUCT_DISCONTINUED";
 
+    public static final String CATEGORY_CREATED = "CATEGORY_CREATED";
+    public static final String CATEGORY_UPDATED = "CATEGORY_UPDATED";
+    public static final String CATEGORY_DELETED = "CATEGORY_DELETED";
+
     // Published by inventory-service on the inventory-events topic
     public static final String INVENTORY_UPDATED = "INVENTORY_UPDATED";
     public static final String INVENTORY_LOW = "INVENTORY_LOW";
