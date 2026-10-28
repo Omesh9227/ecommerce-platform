@@ -3,12 +3,38 @@
 Built incrementally, phase by phase. Every service runs and is tested **locally first**;
 Docker/Docker Compose is added only after all services work locally.
 
+## Repository layout
+
+```
+ecommerce-platform/
+├─ backend/                 all Spring Boot modules (Java 21, Maven)
+│  ├─ pom.xml               lists every module: build/test them all, import them all into IntelliJ
+│  ├─ discovery-server/     config-server/     api-gateway/
+│  ├─ user-service/  product-service/  inventory-service/  cart-service/  order-service/
+│  ├─ payment-service/  notification-service/  wishlist-service/  review-service/
+│  ├─ shipping-service/  search-service/  recommendation-service/  admin-service/
+│  └─ config-repo/          business settings served by config-server
+├─ frontend/                the storefront (React + TypeScript, Node.js 22)
+├─ .env                     secrets for every service (git-ignored; copy .env.example)
+└─ .env.example
+```
+
+```bash
+cd backend && mvn clean verify                 # build and test every backend module
+cd backend/order-service && mvn clean verify   # or just one
+cd frontend && npm test                        # frontend tests
+```
+
+**IntelliJ**: open the repository folder, then in the Maven tool window click **+** and add `backend/pom.xml`
+once; all 16 modules appear under it. Services run as before (`<Name>Application`, working directory = the module's
+folder). The frontend opens fine in IntelliJ or VS Code (`frontend/` folder).
+
 ## Services
 
 | Service         | Port | Database               | Status             |
 |-----------------|------|------------------------|--------------------|
 | discovery-server | 8761 | — (Eureka registry)   | Phase 8 — complete |
-| config-server   | 8888 | — (serves `config-repo/`) | Phase 8 — complete |
+| config-server   | 8888 | — (serves `backend/config-repo/`) | Phase 8 — complete |
 | api-gateway     | 8080 | —                      | Phase 1 — complete |
 | user-service    | 8081 | `ecommerce_user_db`    | Phase 1 — complete |
 | product-service | 8082 | `ecommerce_product_db` | Phase 2 — complete; Kafka events in Phase 3 |
@@ -25,7 +51,7 @@ Docker/Docker Compose is added only after all services work locally.
 | admin-service   | 8093 | `ecommerce_admin_db`   | Phase 14 — complete (dashboard: sales, orders, payments, stock, deliveries, activity feed) |
 | frontend (storefront) | 3000 | — (React, calls the gateway) | Phase 15 — complete (search, product pages, cart, checkout, payment, orders, tracking, reviews, wishlist) |
 
-All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
+All client traffic goes through the gateway on **8080** (see `backend/api-gateway/README.md`).
 Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → review-service → shipping-service → search-service → recommendation-service → admin-service → api-gateway → **frontend** (`cd frontend && npm run dev`, then open http://localhost:3000).
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
@@ -37,7 +63,7 @@ Docker (18), Kubernetes (19), Jenkins (20) and GCP (21) follow once everything r
 ## Service discovery and configuration (Phase 8)
 
 ```
-                 discovery-server :8761 (Eureka)        config-server :8888 ──reads── config-repo/*.properties
+                 discovery-server :8761 (Eureka)        config-server :8888 ──reads── backend/config-repo/*.properties
                   ▲ register / look up                    │ settings at startup
                   │                                       ▼
 Postman ──► api-gateway :8080 ── lb://order-service ──► order-service ── lb://inventory-service ──► ...
@@ -47,7 +73,7 @@ Postman ──► api-gateway :8080 ── lb://order-service ──► order-se
   each other by **name** (`lb://order-service`) instead of fixed `localhost:8085` URLs. Dashboard:
   http://localhost:8761.
 - **Config Server** (`config-server`): business settings (shipping fee, payment window, cart limits, email sender...)
-  live in [`config-repo/`](config-repo) - change one, restart that service, no rebuild. Technical settings stay
+  live in [`backend/config-repo/`](backend/config-repo) - change one, restart that service, no rebuild. Technical settings stay
   in each service's `application.properties`; secrets stay in `.env`.
 - Both need a login, from `.env`: `EUREKA_USERNAME/PASSWORD`, `CONFIG_SERVER_USERNAME/PASSWORD`.
 - Start them **before** the services: a service refuses to start without its configuration.
@@ -115,7 +141,7 @@ redis-cli ping                 # → PONG
 ```
 
 Dev carts live in database 0; cart-service's integration tests use database 15 and empty it before each test.
-Unlike Kafka's console consumer, `redis-cli` commands return straight away (see `cart-service/README.md` for
+Unlike Kafka's console consumer, `redis-cli` commands return straight away (see `backend/cart-service/README.md` for
 how to look at carts).
 
 ## Mailpit (local email, no Docker)
@@ -178,7 +204,7 @@ The admin is created only if that email doesn't exist yet, so it's safe to leave
 Run `UserServiceApplication` in IntelliJ, or:
 
 ```bash
-cd user-service
+cd backend/user-service
 mvn spring-boot:run
 ```
 
@@ -198,7 +224,7 @@ and their own test-only JWT key (`src/test/resources/application-test.properties
 
 ## 5. Postman
 
-Import `user-service/postman/user-service.postman_collection.json` (its `adminEmail`/`adminPassword`
+Import `backend/user-service/postman/user-service.postman_collection.json` (its `adminEmail`/`adminPassword`
 variables already match the defaults in `.env`), and run the requests top to bottom. Login requests save
 tokens into collection variables automatically.
 

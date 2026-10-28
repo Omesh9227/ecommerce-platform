@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Lists every backend module so they can be built and tested together (mvn clean verify in backend/)
+    and imported into IntelliJ in one step. It is only a list: each module keeps its own parent
+    (spring-boot-starter-parent) and builds on its own exactly as before (cd backend/<module> && mvn verify).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.ecommerce</groupId>
+    <artifactId>ecommerce-backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>ecommerce-backend</name>
+    <description>All backend modules of the e-commerce platform</description>
+
+    <modules>
+        <module>discovery-server</module>
+        <module>config-server</module>
+        <module>api-gateway</module>
+        <module>user-service</module>
+        <module>product-service</module>
+        <module>inventory-service</module>
+        <module>cart-service</module>
+        <module>order-service</module>
+        <module>payment-service</module>
+        <module>notification-service</module>
+        <module>wishlist-service</module>
+        <module>review-service</module>
+        <module>shipping-service</module>
+        <module>search-service</module>
+        <module>recommendation-service</module>
+        <module>admin-service</module>
+    </modules>
+</project>
