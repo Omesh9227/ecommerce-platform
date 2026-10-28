@@ -1,0 +1,85 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #1d2b36;
+  --color-ink-soft: #4a5a66;
+  --color-ink-faint: #7a8a94;
+  --color-mist: #f3f5f2;
+  --color-mist-deep: #e4e9e4;
+  --color-line: #d6ddd7;
+  --color-marigold: #f2a900;
+  --color-marigold-deep: #d99500;
+  --color-marigold-pale: #fff4d6;
+  --color-leaf: #2e7d5b;
+  --color-leaf-pale: #e3f2ea;
+  --color-chili: #c2412d;
+  --color-chili-pale: #fbe9e5;
+  --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --container-page: 80rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--color-mist);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'tnum' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    color: var(--color-ink);
+    letter-spacing: -0.01em;
+  }
+  button:not(:disabled),
+  [role='tab']:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-marigold);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+}
+@utility btn-buy {
+  @apply btn bg-marigold text-ink hover:bg-marigold-deep;
+}
+@utility btn-dark {
+  @apply btn bg-ink text-white hover:bg-ink-soft;
+}
+@utility btn-quiet {
+  @apply btn border border-line bg-white text-ink hover:border-ink-faint;
+}
+@utility btn-link {
+  @apply font-semibold text-ink underline decoration-marigold decoration-2 underline-offset-4 hover:decoration-ink;
+}
+@utility field {
+  @apply block w-full rounded-md border border-line bg-white px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none;
+}
+@utility panel {
+  @apply rounded-lg border border-line bg-white;
+}
+
+@layer components {
+  .field[aria-invalid='true'] {
+    border-color: var(--color-chili);
+  }
+}
