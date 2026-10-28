@@ -72,7 +72,9 @@ New services are added as routes in `config/GatewayRoutesConfig.java`.
 4. Check routes: http://localhost:8080/actuator/gateway/routes
 
 Configuration comes from the root `.env` (shared with user-service). The gateway needs only `JWT_SECRET`
-(same value as user-service), plus the Eureka and Config Server logins. Optional: `CORS_ALLOWED_ORIGINS`.
+(same value as user-service), plus the Eureka and Config Server logins. Optional: `CORS_ALLOWED_ORIGINS` (default
+`http://localhost:3000`). The storefront in `frontend/` doesn't need CORS: its dev server forwards `/api` to the
+gateway, so the browser sees one address.
 Each route's address is `lb://<service-name>` (e.g. `lb://order-service`); to bypass Eureka for one service set
 e.g. `ORDER_SERVICE_URL=http://localhost:8085`. If no instance of a service is running, the gateway answers with
 a JSON 503.

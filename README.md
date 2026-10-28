@@ -23,13 +23,16 @@ Docker/Docker Compose is added only after all services work locally.
 | search-service  | 8091 | `ecommerce_search_db`  | Phase 12 — complete (full-text search, typo correction, filters with counts, suggestions) |
 | recommendation-service | 8092 | `ecommerce_recommendation_db` | Phase 13 — complete (bought together, also viewed, similar, trending, for you) |
 | admin-service   | 8093 | `ecommerce_admin_db`   | Phase 14 — complete (dashboard: sales, orders, payments, stock, deliveries, activity feed) |
+| frontend (storefront) | 3000 | — (React, calls the gateway) | Phase 15 — complete (search, product pages, cart, checkout, payment, orders, tracking, reviews, wishlist) |
 
 All client traffic goes through the gateway on **8080** (see `api-gateway/README.md`).
-Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → review-service → shipping-service → search-service → recommendation-service → admin-service → api-gateway.
+Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → review-service → shipping-service → search-service → recommendation-service → admin-service → api-gateway → **frontend** (`cd frontend && npm run dev`, then open http://localhost:3000).
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
-Still to come before Docker: Prometheus + Grafana (metrics and monitoring dashboards).
-Docker, Kubernetes, Jenkins and GCP follow once every service runs locally.
+The customer website is in [`frontend/`](frontend) (React + TypeScript, see its README); it needs Node.js 22.
+
+Still to come before Docker: the admin panel (Phase 16), then Prometheus + Grafana (Phase 17).
+Docker (18), Kubernetes (19), Jenkins (20) and GCP (21) follow once everything runs locally.
 
 ## Service discovery and configuration (Phase 8)
 
