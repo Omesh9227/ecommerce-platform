@@ -107,3 +107,22 @@ export function newIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `k${Date.now()}${Math.random().toString(36).slice(2, 12)}`;
 }
+
+/** Downloads a file the gateway serves only to signed-in users (a plain link can't send the token). */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = tokenProvider();
+  const response = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    if (response.status === 401 && token) onUnauthorized();
+    throw new ApiError(response.status, errorMessage(response.status, body));
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

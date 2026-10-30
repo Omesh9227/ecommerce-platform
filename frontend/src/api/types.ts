@@ -246,6 +246,7 @@ export interface TimelineEntry {
 export interface Order {
   orderId: string;
   orderNumber: string;
+  userId?: string;
   status: OrderStatus;
   statusReason: string | null;
   items: OrderItem[];
