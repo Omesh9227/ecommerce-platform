@@ -34,6 +34,9 @@ function seed() {
     views: new Map(), // userId -> [productId] newest first
     searches: new Map(),
     seq: 1000,
+    movements: [], // stock movements
+    activity: [], // the admin dashboard's feed
+    emails: [], // what notification-service would have sent
   };
   addUser({ firstName: 'Shop', lastName: 'Admin', email: 'admin@ecommerce.com', phoneNumber: '9000000000', password: 'Admin@12345' }, 'ADMIN');
   const reviewer = addUser({ firstName: 'Priya', lastName: 'Sharma', email: 'priya@example.com', phoneNumber: '9876543211', password: 'Password@123' });
@@ -97,6 +100,7 @@ function addProduct(r) {
 function setStock(productId, onHand) {
   const s = db.stock.get(productId);
   s.onHand = onHand;
+  s.alerted = available(productId) <= s.threshold;
 }
 
 function addReview(user, productId, rating, title, comment, verified) {
@@ -166,7 +170,8 @@ function caller(req) {
   try {
     const claims = JSON.parse(Buffer.from(header.slice(7).split('.')[1], 'base64url').toString());
     if (claims.exp * 1000 < Date.now()) return null;
-    return db.users.get(claims.sub) ?? null;
+    const u = db.users.get(claims.sub);
+    return u && u.accountStatus === 'ACTIVE' ? u : null;
   } catch {
     return null;
   }
@@ -241,6 +246,64 @@ function addDays(days) {
   return d.toISOString().slice(0, 10);
 }
 
+const stockView = (id) => {
+  const s = db.stock.get(id);
+  const p = db.products.get(id);
+  return { productId: id, sku: p.sku, productName: p.name, productStatus: p.status, quantityOnHand: s.onHand, quantityReserved: s.reserved, availableQuantity: available(id), lowStockThreshold: s.threshold, lowStock: available(id) <= s.threshold, updatedAt: s.updatedAt ?? p.updatedAt };
+};
+
+function checkProduct(b) {
+  const e = {};
+  if (!/^[A-Za-z0-9-]{3,64}$/.test(b.sku ?? '')) e.sku = 'SKU must be 3-64 letters, digits or hyphens';
+  if (!b.name || b.name.trim().length < 2 || b.name.length > 200) e.name = 'Name must be 2-200 characters';
+  if (!(Number(b.price) > 0)) e.price = 'Price must be greater than 0';
+  if (b.discountPercent != null && !(Number(b.discountPercent) >= 0 && Number(b.discountPercent) <= 99.99)) e.discountPercent = 'Discount must be between 0 and 99.99';
+  if (b.categoryId && !category(b.categoryId)) e.categoryId = 'Category not found';
+  if ((b.imageUrls ?? []).length > 10) e.imageUrls = 'At most 10 images';
+  invalid(e);
+}
+
+// ---------- what the other services would record (stock movements, dashboard feed, emails) ----------
+
+const IST = 5.5 * 3600_000;
+const istDay = (iso) => new Date(Date.parse(iso) + IST).toISOString().slice(0, 10);
+const dayStart = (day) => Date.parse(`${day}T00:00:00+05:30`);
+
+function log(kind, severity, message, orderNumber, productId) {
+  db.activity.unshift({ occurredAt: now(), kind, severity, message, orderNumber: orderNumber ?? undefined, productId: productId ?? undefined });
+}
+
+function email(o, eventType, subject) {
+  const u = db.users.get(o.userId);
+  db.emails.unshift({ id: randomUUID(), eventType, orderNumber: o.orderNumber, userId: o.userId, channel: 'EMAIL', recipient: u?.email ?? '', subject, status: 'SENT', sentAt: now() });
+}
+
+const inr = (n) => `INR ${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Changes stock the way inventory-service does: records a movement, raises a low-stock alert once. */
+function changeStock(productId, type, change, opts = {}) {
+  const s = db.stock.get(productId);
+  if (type === 'RESERVE') s.reserved += change;
+  else if (type === 'RELEASE') s.reserved -= change;
+  else if (type === 'SALE') {
+    s.reserved -= change;
+    s.onHand -= change;
+  } else s.onHand += change; // ADJUSTMENT, RESTOCK, RETURN
+  s.updatedAt = now();
+  db.movements.unshift({ id: randomUUID(), productId, movementType: type, quantityChange: type === 'RESERVE' || type === 'SALE' ? -change : change, quantityOnHandAfter: s.onHand, quantityReservedAfter: s.reserved, reason: opts.reason ?? null, reference: opts.reference ?? null, createdAt: now() });
+  checkLow(productId);
+}
+
+function checkLow(productId) {
+  const s = db.stock.get(productId);
+  const p = db.products.get(productId);
+  const low = available(productId) <= s.threshold;
+  if (low && !s.alerted) {
+    s.alerted = true;
+    log('LOW_STOCK', 'WARNING', `Low stock: ${p.name} (${p.sku}) - ${available(productId)} left, threshold ${s.threshold}`, null, productId);
+  } else if (!low) s.alerted = false;
+}
+
 function track(s, status, description, location) {
   s.status = status;
   s.tracking.push({ status, description, location, occurredAt: now() });
@@ -271,6 +334,7 @@ route('POST', '/api/v1/auth/register', ({ body }) => {
 route('POST', '/api/v1/auth/login', ({ body }) => {
   const u = [...db.users.values()].find((x) => x.email === (body.email ?? '').toLowerCase() && x.password === body.password);
   if (!u) throw new Http(401, 'Invalid email or password');
+  if (u.accountStatus !== 'ACTIVE') throw new Http(403, `Your account is ${u.accountStatus.toLowerCase()}. Contact support.`);
   return ok({ accessToken: token(u), tokenType: 'Bearer', user: { userId: u.userId, email: u.email, role: u.role } });
 });
 const profile = (u) => ({ userId: u.userId, firstName: u.firstName, lastName: u.lastName, email: u.email, phoneNumber: u.phoneNumber, role: u.role, accountStatus: u.accountStatus, createdAt: u.createdAt, updatedAt: u.updatedAt });
@@ -290,29 +354,31 @@ route('GET', '/api/v1/categories', () => {
   const tree = (parentId) => db.categories.filter((c) => c.parentId === parentId).map((c) => ({ id: c.id, name: c.name, description: c.description, children: tree(c.id) }));
   return ok(tree(null));
 });
-route('POST', '/api/v1/categories', ({ body }) => {
-  const c = addCategory(body.name, body.parentId ?? null, body.description ?? null);
-  return ok({ id: c.id, name: c.name, description: c.description, parent: null, children: [], createdAt: now(), updatedAt: now() }, 201);
-}, 'admin');
-route('GET', '/api/v1/products/:id', ({ params }) => {
+route('GET', '/api/v1/products/:id', ({ params, user }) => {
   const p = db.products.get(params.id);
-  if (!p || p.status !== 'ACTIVE') throw new Http(404, `Product not found: ${params.id}`);
+  if (!p || (p.status !== 'ACTIVE' && user?.role !== 'ADMIN')) throw new Http(404, `Product not found: ${params.id}`);
   return ok(productView(p));
 });
 route('POST', '/api/v1/products', ({ body }) => {
   if ([...db.products.values()].some((p) => p.sku === body.sku)) throw new Http(409, `A product with SKU ${body.sku} already exists`);
-  return ok(productView(addProduct(body)), 201);
+  checkProduct(body);
+  const p = addProduct(body);
+  p.status = body.status ?? 'ACTIVE';
+  return ok(productView(p), 201);
 }, 'admin');
 route('GET', '/api/v1/inventory/:id', ({ params }) => {
   const s = db.stock.get(params.id);
   if (!s) throw new Http(404, 'Inventory item not found');
-  return ok({ productId: params.id, quantityOnHand: s.onHand, quantityReserved: s.reserved, availableQuantity: available(params.id), lowStockThreshold: s.threshold });
+  return ok(stockView(params.id));
 }, 'admin');
 route('PUT', '/api/v1/inventory/:id/stock', ({ params, body }) => {
   const s = db.stock.get(params.id);
   if (!s) throw new Http(404, 'Inventory item not found');
-  s.onHand = Number(body.quantityOnHand);
-  return ok({ productId: params.id, quantityOnHand: s.onHand, availableQuantity: available(params.id) });
+  const target = Number(body.quantityOnHand);
+  if (!(target >= 0)) invalid({ quantityOnHand: 'quantityOnHand cannot be negative' });
+  if (target < s.reserved) throw new Http(409, `${s.reserved} units are reserved for orders; on hand can't go below that`);
+  if (target !== s.onHand) changeStock(params.id, target > s.onHand ? 'RESTOCK' : 'ADJUSTMENT', target - s.onHand, { reason: body.reason ?? 'Stock count' });
+  return ok(stockView(params.id));
 }, 'admin');
 
 // search
@@ -591,9 +657,10 @@ route('POST', '/api/v1/orders/checkout', ({ user, body, headers }) => {
   if (!cart.items.length) throw new Http(400, 'Your cart is empty');
   const short = cart.items.filter((i) => i.status !== 'AVAILABLE');
   if (short.length) throw new Http(409, `Some items in your cart can't be bought right now: ${short.map((i) => i.message).join('; ')}`);
-  cart.items.forEach((i) => (db.stock.get(i.productId).reserved += i.quantity));
+  const number0 = `ORD-${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+  cart.items.forEach((i) => changeStock(i.productId, 'RESERVE', i.quantity, { reference: number0 }));
   const fee = cart.subtotal >= FREE_SHIPPING_FROM ? 0 : SHIPPING_FEE;
-  const number = `ORD-${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+  const number = number0;
   const o = {
     orderId: randomUUID(), orderNumber: number, userId: user.userId, idempotencyKey: key, status: 'PENDING_PAYMENT', statusReason: null,
     items: cart.items.map((i) => ({ productId: i.productId, sku: i.sku, productName: i.name, imageUrl: i.imageUrl, unitPrice: i.unitPrice, listPrice: i.listPrice, quantity: i.quantity, lineTotal: i.lineTotal })),
@@ -605,6 +672,7 @@ route('POST', '/api/v1/orders/checkout', ({ user, body, headers }) => {
   moveOrder(o, 'PENDING_PAYMENT', 'Stock reserved, waiting for payment');
   db.orders.set(number, o);
   db.carts.set(user.userId, []);
+  email(o, 'ORDER_PLACED', `Order ${number} placed - please pay within 30 minutes`);
   later(() => db.payments.set(number, { paymentId: randomUUID(), orderNumber: number, userId: user.userId, status: 'PENDING', amount: o.totalAmount, currency: 'INR', method: null, cardBrand: null, cardLast4: null, upiIdMasked: null, paidAt: null, cancelledAt: null, refundedAt: null, refundReason: null, createdAt: now(), attempts: [] }));
   return ok(orderView(o), 201, 'Order placed successfully');
 }, 'user');
@@ -619,29 +687,32 @@ route('GET', '/api/v1/orders', ({ user, query }) => {
   return ok(page(list.map((o) => ({ orderNumber: o.orderNumber, userId: o.userId, status: o.status, itemCount: o.itemCount, totalAmount: o.totalAmount, currency: 'INR', createdAt: o.createdAt, placedAt: o.placedAt })), Number(query.get('page') ?? 0), 10));
 }, 'user');
 route('GET', '/api/v1/orders/:number', ({ user, params }) => ok(orderView(ownOrder(user, params.number))), 'user');
-route('POST', '/api/v1/orders/:number/cancel', ({ user, params, body }) => {
-  const o = ownOrder(user, params.number);
+route('POST', '/api/v1/orders/:number/cancel', ({ user, params, body }) => cancelOrder(ownOrder(user, params.number), body?.reason, 'Cancelled by customer'), 'user');
+function cancelOrder(o, reason, fallback) {
   if (o.status === 'CANCELLED') return ok(orderView(o));
   if (!['PENDING_PAYMENT', 'CONFIRMED'].includes(o.status)) throw new Http(409, `Order ${o.orderNumber} can't be cancelled${o.status === 'SHIPPED' ? ' (it is already on its way)' : ''}`);
   const paid = o.status === 'CONFIRMED';
-  o.items.forEach((i) => {
-    const s = db.stock.get(i.productId);
-    if (paid) s.onHand += i.quantity;
-    else s.reserved -= i.quantity;
-  });
-  let note = body?.reason?.trim() || 'Cancelled by customer';
+  o.items.forEach((i) => changeStock(i.productId, paid ? 'RETURN' : 'RELEASE', i.quantity, { reference: o.orderNumber }));
+  let note = reason?.trim() || fallback;
   if (paid) note += ' - a full refund has been requested';
   moveOrder(o, 'CANCELLED', note);
+  log(paid ? 'PAID_ORDER_CANCELLED' : 'ORDER_CANCELLED', paid ? 'WARNING' : 'INFO', paid ? `Paid order ${o.orderNumber} cancelled: ${note} (${inr(o.totalAmount)} to refund)` : `Order ${o.orderNumber} cancelled before payment: ${note}`, o.orderNumber);
+  email(o, 'ORDER_CANCELLED', `Order ${o.orderNumber} cancelled`);
   const shipment = db.shipments.get(o.orderNumber);
   if (shipment) track(shipment, 'CANCELLED', 'Cancelled');
   later(() => {
     const p = db.payments.get(o.orderNumber);
     if (!p) return;
-    if (p.status === 'SUCCEEDED') Object.assign(p, { status: 'REFUNDED', refundedAt: now(), refundReason: note });
+    if (p.status === 'SUCCEEDED') {
+      Object.assign(p, { status: 'REFUNDED', refundedAt: now(), refundReason: note });
+      Object.assign(o, { refundedAmount: o.totalAmount, refundedAt: now() });
+      log('REFUND_COMPLETED', 'INFO', `Refund of ${inr(o.totalAmount)} for ${o.orderNumber} completed`, o.orderNumber);
+      email(o, 'PAYMENT_REFUNDED', `Refund of ${inr(o.totalAmount)} for ${o.orderNumber}`);
+    }
     else if (p.status === 'PENDING') Object.assign(p, { status: 'CANCELLED', cancelledAt: now() });
   });
   return ok(orderView(o));
-}, 'user');
+}
 
 // payments
 route('GET', '/api/v1/payments/orders/:number', ({ user, params }) => {
@@ -672,21 +743,20 @@ route('POST', '/api/v1/payments/orders/:number/pay', ({ user, params, body, head
   if (failure) {
     Object.assign(attempt, { status: 'FAILED', failureCode: failure[0], failureReason: failure[1] });
     p.attempts.push(attempt);
+    log('PAYMENT_FAILED', 'WARNING', `Payment of ${inr(p.amount)} for ${o.orderNumber} failed: ${failure[1]}`, o.orderNumber);
     throw new Http(402, failure[1]);
   }
   p.attempts.push(attempt);
   Object.assign(p, { status: 'SUCCEEDED', method: attempt.method, cardBrand: attempt.cardBrand, cardLast4: attempt.cardLast4, upiIdMasked: attempt.upiIdMasked, paidAt: now() });
   later(() => {
     if (o.status !== 'PENDING_PAYMENT') return;
-    o.items.forEach((i) => {
-      const s = db.stock.get(i.productId);
-      s.reserved -= i.quantity;
-      s.onHand -= i.quantity;
-    });
+    o.items.forEach((i) => changeStock(i.productId, 'SALE', i.quantity, { reference: o.orderNumber }));
     const days = estimateDays(o.shippingAddress.postalCode);
     o.estimatedDeliveryDate = addDays(days);
+    log('ORDER_PAID', 'INFO', `Order ${o.orderNumber} paid: ${inr(o.totalAmount)}`, o.orderNumber);
+    email(o, 'ORDER_CONFIRMED', `Payment received for ${o.orderNumber}`);
     moveOrder(o, 'CONFIRMED', `Paid by ${attempt.method === 'CARD' ? `${attempt.cardBrand} ending ${attempt.cardLast4}` : 'UPI'}`);
-    const s = { id: randomUUID(), orderNumber: o.orderNumber, userId: o.userId, status: 'PENDING', carrier: undefined, trackingNumber: undefined, estimatedDeliveryDate: o.estimatedDeliveryDate, failedAttempts: 0, tracking: [], city: o.shippingAddress.city, state: o.shippingAddress.state, createdAt: now() };
+    const s = { id: randomUUID(), orderNumber: o.orderNumber, userId: o.userId, status: 'PENDING', carrier: undefined, trackingNumber: undefined, estimatedDeliveryDate: o.estimatedDeliveryDate, failedAttempts: 0, tracking: [], city: o.shippingAddress.city, state: o.shippingAddress.state, address: o.shippingAddress, items: o.items, createdAt: now() };
     track(s, 'PENDING', 'Order confirmed - preparing your package', 'Bengaluru warehouse');
     db.shipments.set(o.orderNumber, s);
   });
@@ -713,14 +783,34 @@ route('GET', '/api/v1/shipments/delivery-estimate', ({ query }) => {
   const d = new Date(addDays(days) + 'T00:00:00');
   return ok({ postalCode: pin, deliveryDays: days, estimatedDeliveryDate: addDays(days), message: `Delivery by ${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', ',')}` });
 });
+const adminShipmentView = (s) => ({ ...shipmentView(s), statusReason: s.status === 'CANCELLED' ? 'The order was cancelled' : undefined, userId: s.userId,
+  deliveryAddress: { recipientName: s.address.fullName, phone: s.address.phone, line1: s.address.line1, line2: s.address.line2, city: s.address.city, state: s.address.state, postalCode: s.address.postalCode, country: 'IN' },
+  items: s.items.map((i) => ({ productId: i.productId, sku: i.sku, productName: i.productName, quantity: i.quantity })) });
 route('GET', '/api/v1/shipments/admin', ({ query }) => {
-  const list = [...db.shipments.values()].filter((s) => !query.get('orderNumber') || s.orderNumber === query.get('orderNumber'));
-  return ok(page(list.map((s) => ({ id: s.id, orderNumber: s.orderNumber, status: s.status })), 0, 20));
+  const list = [...db.shipments.values()]
+    .filter((s) => (!query.get('orderNumber') || s.orderNumber === query.get('orderNumber')) && (!query.get('status') || s.status === query.get('status')))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const summary = (s) => ({ id: s.id, orderNumber: s.orderNumber, status: s.status, carrier: s.carrier, trackingNumber: s.trackingNumber, estimatedDeliveryDate: s.estimatedDeliveryDate, city: s.city, postalCode: s.address.postalCode, itemCount: s.items.reduce((n, i) => n + i.quantity, 0), createdAt: s.createdAt, updatedAt: now() });
+  return ok(page(list.map(summary), Number(query.get('page') ?? 0), 20));
+}, 'admin');
+route('GET', '/api/v1/shipments/admin/:id', ({ params }) => {
+  const s = [...db.shipments.values()].find((x) => x.id === params.id);
+  if (!s) throw new Http(404, 'Shipment not found');
+  return ok(adminShipmentView(s));
 }, 'admin');
 route('POST', '/api/v1/shipments/admin/:id/:action', ({ params, body }) => {
   const s = [...db.shipments.values()].find((x) => x.id === params.id);
   if (!s) throw new Http(404, 'Shipment not found');
   const o = db.orders.get(s.orderNumber);
+  const onTheWay = ['SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERY_FAILED'];
+  if (params.action === 'pack' && s.status !== 'PENDING') throw new Http(409, `Shipment is ${s.status} and can't be packed`);
+  if (params.action === 'ship' && s.status !== 'PACKED') throw new Http(409, `Shipment is ${s.status} and can't be shipped`);
+  if (params.action === 'ship' && !['Delhivery', 'Blue Dart', 'Ecom Express', 'India Post'].includes(body.carrier)) throw new Http(400, 'Unknown carrier. Use one of: Delhivery, Blue Dart, Ecom Express, India Post');
+  if (params.action === 'tracking') {
+    if (!onTheWay.includes(s.status)) throw new Http(409, `Shipment is ${s.status}: scans start after it ships`);
+    if (body.status === 'IN_TRANSIT' && !body.location) invalid({ location: 'location is required for IN_TRANSIT' });
+    if (body.status === 'DELIVERY_FAILED' && !body.note) invalid({ note: 'note is required for DELIVERY_FAILED' });
+  }
   if (params.action === 'pack') track(s, 'PACKED', 'Packed and ready to ship', 'Bengaluru warehouse');
   else if (params.action === 'ship') {
     s.carrier = body.carrier;
@@ -729,16 +819,25 @@ route('POST', '/api/v1/shipments/admin/:id/:action', ({ params, body }) => {
     later(() => {
       Object.assign(o, { carrier: s.carrier, trackingNumber: s.trackingNumber });
       moveOrder(o, 'SHIPPED', `Shipped with ${s.carrier} (${s.trackingNumber})`);
+      log('ORDER_SHIPPED', 'INFO', `Order ${o.orderNumber} shipped`, o.orderNumber);
+      email(o, 'ORDER_SHIPPED', `Your order ${o.orderNumber} has shipped`);
     });
   } else if (params.action === 'tracking') {
     const text = { IN_TRANSIT: 'In transit', OUT_FOR_DELIVERY: 'Out for delivery', DELIVERY_FAILED: `Delivery attempt failed: ${body.note ?? ''}`, DELIVERED: 'Delivered' }[body.status];
     track(s, body.status, text, body.location);
+    if (body.status === 'DELIVERY_FAILED') {
+      s.failedAttempts += 1;
+      log('DELIVERY_FAILED', 'WARNING', `Delivery of ${o.orderNumber} failed (${s.carrier}): ${body.note}`, o.orderNumber);
+      email(o, 'SHIPMENT_DELIVERY_FAILED', `We missed you - ${o.orderNumber}`);
+    }
     if (body.status === 'DELIVERED') later(() => {
       moveOrder(o, 'DELIVERED', 'Delivered');
+      log('ORDER_DELIVERED', 'INFO', `Order ${o.orderNumber} delivered`, o.orderNumber);
+      email(o, 'ORDER_DELIVERED', `Delivered: ${o.orderNumber}`);
       db.reviews.filter((r) => r.userId === o.userId && o.items.some((i) => i.productId === r.productId)).forEach((r) => (r.verifiedPurchase = true));
     });
   }
-  return ok(shipmentView(s));
+  return ok(adminShipmentView(s));
 }, 'admin');
 
 // wishlist
@@ -775,6 +874,267 @@ route('POST', '/api/v1/wishlist/items/:pid/move-to-cart', (ctx) => {
   return ok(wishlistView(ctx.user.userId));
 }, 'user');
 
+// ---------------------------------------------------------------- the staff side (admin panel)
+// Registered ahead of the customer routes, so /orders/admin isn't read as an order number.
+
+const staff = (method, pattern, handler) => {
+  route(method, pattern, handler, 'admin');
+  routes.unshift(routes.pop());
+};
+const pageNo = (query) => Number(query.get('page') ?? 0);
+const sizeOf = (query, d = 20) => Math.min(100, Number(query.get('size') ?? d));
+const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt);
+
+// dashboard (admin-service): days are India days, like the real one
+const today = () => istDay(now());
+const shiftDay = (day, n) => new Date(dayStart(day) + n * 86_400_000 + IST).toISOString().slice(0, 10);
+function rangeOf(query) {
+  const to = query.get('to') || today();
+  const from = query.get('from') || shiftDay(to, -29);
+  if (from > to) throw new Http(400, "'from' must be on or before 'to'");
+  return { from, to };
+}
+const inRange = (iso, r) => iso && istDay(iso) >= r.from && istDay(iso) <= r.to;
+const units = (o) => o.items.reduce((n, i) => n + i.quantity, 0);
+function salesIn(r) {
+  const paid = [...db.orders.values()].filter((o) => inRange(o.confirmedAt, r));
+  const refunded = [...db.orders.values()].filter((o) => inRange(o.refundedAt, r));
+  const gross = round2(paid.reduce((n, o) => n + o.totalAmount, 0));
+  const refunds = round2(refunded.reduce((n, o) => n + o.refundedAmount, 0));
+  return { paid, refunded, gross, refunds, net: round2(gross - refunds) };
+}
+staff('GET', '/api/v1/dashboard/summary', ({ query }) => {
+  const r = rangeOf(query);
+  const days = (dayStart(r.to) - dayStart(r.from)) / 86_400_000 + 1;
+  const cur = salesIn(r);
+  const prev = salesIn({ from: shiftDay(r.from, -days), to: shiftDay(r.from, -1) });
+  const all = [...db.orders.values()];
+  const placed = all.filter((o) => inRange(o.placedAt, r));
+  const attempts = [...db.payments.values()].flatMap((p) => p.attempts).filter((a) => inRange(a.createdAt, r));
+  const succeeded = attempts.filter((a) => a.status === 'SUCCEEDED').length;
+  const failed = attempts.length - succeeded;
+  const buyers = new Set(cur.paid.map((o) => o.userId));
+  const firstPaid = (u) => all.filter((o) => o.userId === u && o.confirmedAt).map((o) => o.confirmedAt).sort()[0];
+  const toShip = all.filter((o) => o.status === 'CONFIRMED');
+  const weekAgo = shiftDay(today(), -6);
+  return ok({
+    from: r.from, to: r.to, currency: 'INR',
+    sales: {
+      grossSales: cur.gross, refunds: cur.refunds, netSales: cur.net, paidOrders: cur.paid.length,
+      averageOrderValue: cur.paid.length ? round2(cur.gross / cur.paid.length) : undefined,
+      unitsSold: cur.paid.reduce((n, o) => n + units(o), 0), previousPeriodNetSales: prev.net,
+      netSalesChangePercent: prev.net ? round2(((cur.net - prev.net) / Math.abs(prev.net)) * 100) : undefined,
+    },
+    orders: {
+      placed: placed.length, paid: cur.paid.length,
+      cancelledBeforePayment: all.filter((o) => inRange(o.cancelledAt, r) && !o.confirmedAt).length,
+      cancelledAfterPayment: all.filter((o) => inRange(o.cancelledAt, r) && o.confirmedAt).length,
+      shipped: all.filter((o) => inRange(o.shippedAt, r)).length, delivered: all.filter((o) => inRange(o.deliveredAt, r)).length,
+    },
+    payments: { succeeded, failed, successRatePercent: attempts.length ? round2((succeeded / attempts.length) * 100) : undefined, refunds: cur.refunded.length },
+    customers: { buyers: buyers.size, newBuyers: [...buyers].filter((u) => inRange(firstPaid(u), r)).length },
+    workload: {
+      ordersToShip: toShip.length, oldestToShipPaidAt: toShip.map((o) => o.confirmedAt).sort()[0],
+      ordersInTransit: all.filter((o) => o.status === 'SHIPPED').length,
+      lowStockProducts: [...db.stock.keys()].filter((id) => db.products.get(id).status !== 'DISCONTINUED' && available(id) <= db.stock.get(id).threshold).length,
+      deliveryFailuresLast7Days: db.activity.filter((a) => a.kind === 'DELIVERY_FAILED' && istDay(a.occurredAt) >= weekAgo).length,
+    },
+  });
+});
+function daily(r) {
+  const out = [];
+  for (let d = r.from; d <= r.to; d = shiftDay(d, 1)) {
+    const s = salesIn({ from: d, to: d });
+    out.push({ date: d, paidOrders: s.paid.length, grossSales: s.gross, refunds: s.refunds, netSales: s.net, unitsSold: s.paid.reduce((n, o) => n + units(o), 0) });
+  }
+  return out;
+}
+staff('GET', '/api/v1/dashboard/sales/daily', ({ query }) => ok(daily(rangeOf(query))));
+staff('GET', '/api/v1/dashboard/sales/daily.csv', ({ query }) => {
+  const r = rangeOf(query);
+  const rows = daily(r).map((d) => [d.date, d.paidOrders, d.grossSales.toFixed(2), d.refunds.toFixed(2), d.netSales.toFixed(2), d.unitsSold, 'INR'].join(','));
+  return { status: 200, contentType: 'text/csv', disposition: `attachment; filename="sales-${r.from}-to-${r.to}.csv"`, raw: ['date,paid_orders,gross_sales,refunds,net_sales,units_sold,currency', ...rows].join('\n') + '\n' };
+});
+staff('GET', '/api/v1/dashboard/products/top', ({ query }) => {
+  const r = rangeOf(query);
+  const by = query.get('by') ?? 'revenue';
+  if (!['revenue', 'units'].includes(by)) throw new Http(400, "'by' must be revenue or units");
+  const rows = new Map();
+  for (const o of salesIn(r).paid)
+    for (const i of o.items) {
+      const t = rows.get(i.productId) ?? { productId: i.productId, sku: i.sku, name: i.productName, unitsSold: 0, revenue: 0, orders: 0 };
+      t.unitsSold += i.quantity;
+      t.revenue = round2(t.revenue + i.lineTotal);
+      t.orders += 1;
+      rows.set(i.productId, t);
+    }
+  const key = by === 'units' ? 'unitsSold' : 'revenue';
+  return ok([...rows.values()].sort((a, b) => b[key] - a[key]).slice(0, Number(query.get('limit') ?? 10)));
+});
+staff('GET', '/api/v1/dashboard/orders/pipeline', () => {
+  const open = ['PENDING_PAYMENT', 'CONFIRMED', 'SHIPPED'];
+  return ok(open.map((status) => {
+    const list = [...db.orders.values()].filter((o) => o.status === status);
+    return { status, orders: list.length, oldestSince: list.map((o) => o.timeline.at(-1).changedAt).sort()[0] };
+  }));
+});
+staff('GET', '/api/v1/dashboard/inventory/low-stock', ({ query }) => {
+  const list = [...db.stock.entries()]
+    .filter(([id, s]) => db.products.get(id).status !== 'DISCONTINUED' && available(id) <= s.threshold)
+    .map(([id, s]) => {
+      const p = db.products.get(id);
+      return { productId: id, sku: p.sku, name: p.name, available: available(id), onHand: s.onHand, reserved: s.reserved, threshold: s.threshold, outOfStock: available(id) === 0, updatedAt: s.updatedAt ?? p.updatedAt };
+    })
+    .sort((a, b) => a.available - b.available || a.name.localeCompare(b.name));
+  return ok(list.slice(0, Number(query.get('limit') ?? 50)));
+});
+staff('GET', '/api/v1/dashboard/activity', ({ query }) => {
+  const severity = query.get('severity');
+  return ok(page(db.activity.filter((a) => !severity || a.severity === severity), pageNo(query), sizeOf(query)));
+});
+
+// orders, payments, emails
+const orderSummary = (o) => ({ orderNumber: o.orderNumber, userId: o.userId, status: o.status, itemCount: o.itemCount, totalAmount: o.totalAmount, currency: 'INR', createdAt: o.createdAt, placedAt: o.placedAt });
+staff('GET', '/api/v1/orders/admin', ({ query }) => {
+  const list = [...db.orders.values()]
+    .filter((o) => (!query.get('status') || o.status === query.get('status')) && (!query.get('userId') || o.userId === query.get('userId')))
+    .sort(newestFirst);
+  return ok(page(list.map(orderSummary), pageNo(query), sizeOf(query)));
+});
+staff('POST', '/api/v1/orders/admin/:number/cancel', ({ params, body }) => {
+  const o = db.orders.get(params.number);
+  if (!o) throw new Http(404, `Order not found: ${params.number}`);
+  return cancelOrder(o, body?.reason, 'Cancelled by admin');
+});
+staff('GET', '/api/v1/payments/admin', ({ query }) => {
+  const list = [...db.payments.values()].filter((p) => !query.get('status') || p.status === query.get('status')).sort(newestFirst);
+  return ok(page(list.map((p) => ({ orderNumber: p.orderNumber, status: p.status, amount: p.amount, currency: 'INR', method: p.method, paidAt: p.paidAt, createdAt: p.createdAt })), pageNo(query), sizeOf(query)));
+});
+staff('GET', '/api/v1/notifications/admin', ({ query }) => {
+  const list = db.emails.filter((e) => !query.get('orderNumber') || e.orderNumber === query.get('orderNumber'));
+  return ok(page(list, pageNo(query), sizeOf(query)));
+});
+
+// catalog (product-service): staff see every status
+const SORTS = { createdAt: (p) => p.createdAt, name: (p) => p.name.toLowerCase(), price: (p) => p.price };
+staff('GET', '/api/v1/products', ({ query }) => {
+  const q = (query.get('search') ?? '').toLowerCase();
+  const cats = query.get('categoryId') ? descendants(query.get('categoryId')) : null;
+  const [field, dir] = (query.get('sort') ?? 'createdAt,desc').split(',');
+  const key = SORTS[field] ?? SORTS.createdAt;
+  const list = [...db.products.values()]
+    .filter((p) => (!query.get('status') || p.status === query.get('status')) && (!cats || cats.includes(p.categoryId)))
+    .filter((p) => !q || [p.name, p.sku, p.brand ?? ''].some((v) => v.toLowerCase().includes(q)))
+    .sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * (dir === 'asc' ? 1 : -1));
+  return ok(page(list.map(productView), pageNo(query), sizeOf(query)));
+});
+staff('PUT', '/api/v1/products/:id', ({ params, body }) => {
+  const p = db.products.get(params.id);
+  if (!p) throw new Http(404, `Product not found: ${params.id}`);
+  checkProduct(body);
+  if ([...db.products.values()].some((x) => x.sku === body.sku && x.id !== p.id)) throw new Http(409, `A product with SKU ${body.sku} already exists`);
+  Object.assign(p, { sku: body.sku, name: body.name.trim(), description: body.description ?? null, brand: body.brand || null, categoryId: body.categoryId ?? p.categoryId, price: Number(body.price), discountPercent: Number(body.discountPercent ?? 0), imageUrls: body.imageUrls ?? [], status: body.status ?? p.status, updatedAt: now() });
+  return ok(productView(p));
+});
+staff('DELETE', '/api/v1/products/:id', ({ params }) => {
+  const p = db.products.get(params.id);
+  if (!p) throw new Http(404, `Product not found: ${params.id}`);
+  Object.assign(p, { status: 'DISCONTINUED', updatedAt: now() });
+  return nothing();
+});
+function checkCategory(body, id) {
+  if (!body.name?.trim()) invalid({ name: 'name is required' });
+  if (body.parentId && !category(body.parentId)) throw new Http(404, 'Parent category not found');
+  if (id && body.parentId && descendants(id).includes(body.parentId)) throw new Http(400, 'A category cannot be moved under itself or one of its sub-categories');
+  const name = body.name.trim();
+  if (db.categories.some((c) => c.id !== id && (c.parentId ?? null) === (body.parentId ?? null) && c.name.toLowerCase() === name.toLowerCase()))
+    throw new Http(409, `A category named '${name}' already exists at this level`);
+}
+staff('POST', '/api/v1/categories', ({ body }) => {
+  checkCategory(body);
+  const c = addCategory(body.name.trim(), body.parentId ?? null, body.description || null);
+  return ok({ id: c.id, name: c.name, description: c.description, createdAt: now(), updatedAt: now() }, 201);
+});
+staff('PUT', '/api/v1/categories/:id', ({ params, body }) => {
+  const c = category(params.id);
+  if (!c) throw new Http(404, 'Category not found');
+  checkCategory(body, c.id);
+  Object.assign(c, { name: body.name.trim(), description: body.description || null, parentId: body.parentId ?? null });
+  return ok({ id: c.id, name: c.name, description: c.description });
+});
+staff('DELETE', '/api/v1/categories/:id', ({ params }) => {
+  const c = category(params.id);
+  if (!c) throw new Http(404, 'Category not found');
+  if (db.categories.some((x) => x.parentId === c.id)) throw new Http(409, 'Category has sub-categories. Delete or move them first.');
+  if ([...db.products.values()].some((p) => p.categoryId === c.id)) throw new Http(409, 'Category has products. Move or delete them first.');
+  db.categories.splice(db.categories.indexOf(c), 1);
+  return nothing();
+});
+
+// inventory
+staff('GET', '/api/v1/inventory', ({ query }) => {
+  const q = (query.get('search') ?? '').toLowerCase();
+  const list = [...db.stock.keys()]
+    .map(stockView)
+    .filter((i) => (query.get('lowStock') !== 'true' || i.lowStock) && (!q || i.productName.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q)))
+    .sort((a, b) => a.availableQuantity - b.availableQuantity || a.productName.localeCompare(b.productName));
+  return ok(page(list, pageNo(query), sizeOf(query)));
+});
+staff('POST', '/api/v1/inventory/:id/stock/adjustments', ({ params, body }) => {
+  const s = db.stock.get(params.id);
+  if (!s) throw new Http(404, 'Inventory item not found');
+  const change = Number(body.quantityChange);
+  if (!Number.isInteger(change)) invalid({ quantityChange: 'quantityChange is required' });
+  if (change === 0) throw new Http(400, 'quantityChange cannot be 0');
+  if (s.onHand + change < s.reserved) throw new Http(409, `Can't remove ${-change}: only ${available(params.id)} available (${s.reserved} reserved for orders)`);
+  changeStock(params.id, change > 0 ? 'RESTOCK' : 'ADJUSTMENT', change, { reason: body.reason ?? null });
+  return ok(stockView(params.id));
+});
+staff('PUT', '/api/v1/inventory/:id/threshold', ({ params, body }) => {
+  const s = db.stock.get(params.id);
+  if (!s) throw new Http(404, 'Inventory item not found');
+  const t = Number(body.lowStockThreshold);
+  if (!(Number.isInteger(t) && t >= 0)) invalid({ lowStockThreshold: 'lowStockThreshold cannot be negative' });
+  Object.assign(s, { threshold: t, updatedAt: now() });
+  checkLow(params.id);
+  return ok(stockView(params.id));
+});
+staff('GET', '/api/v1/inventory/:id/movements', ({ params, query }) => {
+  if (!db.stock.get(params.id)) throw new Http(404, 'Inventory item not found');
+  return ok(page(db.movements.filter((m) => m.productId === params.id).map(({ productId, ...m }) => m), pageNo(query), sizeOf(query)));
+});
+
+// reviews
+const adminReview = (r) => ({ ...reviewView(r, true), userId: r.userId });
+staff('GET', '/api/v1/reviews/admin', ({ query }) => {
+  const list = db.reviews.filter((r) => (!query.get('status') || r.status === query.get('status')) && (!query.get('productId') || r.productId === query.get('productId'))).sort(newestFirst);
+  return ok(page(list.map(adminReview), pageNo(query), sizeOf(query)));
+});
+staff('POST', '/api/v1/reviews/admin/:id/:action', ({ params, body }) => {
+  const r = db.reviews.find((x) => x.id === params.id);
+  if (!r) throw new Http(404, 'Review not found');
+  if (params.action === 'hide') {
+    if (!body.reason?.trim()) invalid({ reason: 'reason is required' });
+    Object.assign(r, { status: 'HIDDEN', hiddenReason: body.reason.trim() });
+  } else if (params.action === 'unhide') Object.assign(r, { status: 'VISIBLE', hiddenReason: null });
+  else throw new Http(404, 'No such action');
+  return ok(adminReview(r));
+});
+
+// customers (user-service)
+staff('GET', '/api/v1/admin/users', ({ query }) => {
+  const list = [...db.users.values()].filter((u) => (!query.get('role') || u.role === query.get('role')) && (!query.get('status') || u.accountStatus === query.get('status'))).sort(newestFirst);
+  return ok(page(list.map(profile), pageNo(query), sizeOf(query)));
+});
+staff('PUT', '/api/v1/admin/users/:id/status', ({ params, body, user }) => {
+  const u = db.users.get(params.id);
+  if (!u) throw new Http(404, 'User not found');
+  if (!['ACTIVE', 'INACTIVE', 'SUSPENDED', 'LOCKED'].includes(body.status)) invalid({ status: 'status must be ACTIVE, INACTIVE, SUSPENDED or LOCKED' });
+  if (u.userId === user.userId) throw new Http(400, 'Admins cannot change their own account status');
+  Object.assign(u, { accountStatus: body.status, updatedAt: now() });
+  return ok(profile(u));
+});
+
 route('POST', '/__mock/reset', () => (seed(), nothing()));
 
 // ---------------------------------------------------------------- server
@@ -800,6 +1160,10 @@ http
     const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(match[i + 1])]));
     try {
       const result = r.handler({ params, query: url.searchParams, body, user, headers: req.headers });
+      if (result.raw !== undefined) {
+        res.writeHead(result.status, { 'Content-Type': result.contentType, 'Content-Disposition': result.disposition ?? '' });
+        return res.end(result.raw);
+      }
       send(res, result.status, result.body);
     } catch (e) {
       if (!(e instanceof Http)) console.error(e);

@@ -1,9 +1,10 @@
-# frontend: the Cartwheel storefront
+# frontend: the Cartwheel storefront and admin panel
 
-The customer website on **http://localhost:3000**: a React app that talks only to the **api-gateway** (8080).
-Customers find products (search with typo correction, filters with counts, suggestions as they type), read and
+The customer website on **http://localhost:3000**, and the staff's admin panel on **http://localhost:3000/admin**: one
+React app that talks only to the **api-gateway** (8080). Customers find products (search with typo correction, filters with counts, suggestions as they type), read and
 write reviews, get recommendations, fill a cart, check out with an address, pay (simulated card or UPI), follow
-their orders and parcels, cancel and get refunds, keep a wishlist and edit their profile.
+their orders and parcels, cancel and get refunds, keep a wishlist and edit their profile. Staff watch sales, ship
+orders, run the catalog and stock, moderate reviews and manage accounts.
 
 ```
 Browser ──► Vite dev server :3000 ──/api/**──► api-gateway :8080 ──► user, product, search, recommendation, review,
@@ -30,6 +31,26 @@ setup, and the app's code uses the same relative paths it will use behind nginx 
 | Sign in, register | `/login`, `/register` | the same rules as user-service, checked before sending |
 
 Cart, checkout, orders, wishlist and account need an account: guests are sent to sign in and brought back.
+
+## Admin panel
+
+Sign in with an **ADMIN** account (`admin@ecommerce.com` / `Admin@12345` locally, created by user-service at startup):
+the header shows an **Admin** link. Customers who open `/admin` are told it's for staff, and the gateway refuses their
+calls anyway (403). The admin code is a separate download (about 17 KB gzipped), so shoppers never load it.
+
+| Page | Address | Uses |
+|------|---------|------|
+| Dashboard | `/admin?range=today\|7d\|30d\|90d` or `?range=custom&from=&to=` | admin-service: waiting work (to ship, on the way, low stock, missed deliveries), net sales with the change on the period before, sales per day (chart or table, CSV download), orders, payments, buyers, best sellers, orders right now, low stock, activity feed (warnings only) |
+| Orders | `/admin/orders?status=&userId=`, `/admin/orders/:number` | order-service (all orders, cancel with a reason and refund), payment-service, shipping-service, notification-service (the emails the customer got) |
+| Shipments | `/admin/shipments?status=&orderNumber=`, `/admin/shipments/:id` | shipping-service: oldest first; pack, hand to a carrier, record scans (in transit needs a hub, a failed delivery needs a reason) |
+| Products | `/admin/products?q=&categoryId=&status=`, `/admin/products/new`, `/admin/products/:id` | product-service: every status, add and edit (the service's rules checked first), hide, discontinue |
+| Categories | `/admin/categories` | product-service: the tree; add, rename, move, delete (refused while it has sub-categories or products) |
+| Inventory | `/admin/inventory?q=&low=1&product=` | inventory-service: count the shelf, add or remove, low-stock threshold, recent movements |
+| Reviews | `/admin/reviews?status=&productId=` | review-service: hide with a reason the author sees, show again, delete |
+| Customers | `/admin/customers?role=&status=` | user-service: accounts, their orders, suspend (signs them out) and reactivate; never your own |
+
+Filters and pages live in the address, so a view can be bookmarked or shared. Actions that can't be undone ask a second
+time in place.
 
 ## Run
 
@@ -67,13 +88,15 @@ npm run e2e                  # browser tests against a built-in mock API (starts
 npm run e2e:live             # the same browser tests against your real services
 ```
 
-**Unit and component tests** (30): money and date formats, the form rules (registration, address, card with Luhn
+**Unit and component tests** (40): money and date formats, the form rules (registration, address, card with Luhn
 check and expiry, UPI), reading the JWT, the API client (envelopes, field errors, 401 ending the session, no
 connection), and pages with a fake gateway: search filters going into the address, adding to the cart as a guest
 and with too little stock, changing quantities, a declined card then a payment with a new Idempotency-Key, a mistyped
-card never sent, cancelling a paid order.
+card never sent, cancelling a paid order. Admin: who may enter, the product rules and a refused SKU shown on its
+field, shipping with a carrier, scans that need a hub or a reason, stock changes, suspending (not yourself, and only
+after a second click), and the dashboard with its chart as a table.
 
-**Browser tests** (Playwright, 3 journeys):
+**Browser tests** (Playwright, 6 journeys: 3 for customers, 3 for staff):
 
 1. A new customer registers, searches with a typo (`walnot lamp` → walnut), opens the product, checks delivery to a
    PIN code, adds 2 to the cart and saves it to the wishlist, checks out (a missing address is caught first), is
@@ -82,11 +105,18 @@ card never sent, cancelling a paid order.
    becomes a **verified purchase**, and finds the order delivered and the item in the wishlist.
 2. A customer pays by UPI and cancels: the order is cancelled with the reason and the payment shows the refund.
 3. A guest opening the cart is sent to sign in (a wrong password first) and comes back to the cart.
+4. Staff sign in at `/admin`, add, rename and delete a category, add a product (a missing category and a bad SKU are
+   caught first), count its stock and set its low-stock warning. A customer buys 3; the dashboard's activity shows the
+   order paid and the product shows as low on stock. Staff open the order and its payment, pack it, ship it with Blue
+   Dart, record the scans (a hub is required) until it's delivered, hide the buyer's review and show it again, suspend
+   the buyer (whose sign-in is then refused), reactivate them and find their order.
+5. Staff cancel a paid order with a reason; the customer is refunded.
+6. A customer can't open the admin area.
 
 `npm run e2e` runs them against `e2e/mock-api/server.mjs`, an in-memory stand-in for the gateway with the same paths,
 answers and rules (including Kafka-like delays). `npm run e2e:live` runs them against `http://localhost:3000`
 (started for you if it isn't running) and the real services, waiting where events travel through Kafka. It creates
-its products in a **Browser tests** category, and uses the admin login `admin@ecommerce.com` / `Admin@12345`
+its products (and a short-lived test category) in a **Browser tests** category, and uses the admin login `admin@ecommerce.com` / `Admin@12345`
 (change with `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD`). A failed run leaves a report: `npx playwright show-report`.
 
 ## How it works
@@ -116,10 +146,11 @@ its products in a **Browser tests** category, and uses the admin login `admin@ec
 frontend/
 ├─ src/
 │  ├─ api/          client, endpoints, types
-│  ├─ auth/         sign-in state, JWT reading, signed-in-only pages
+│  ├─ auth/         sign-in state, JWT reading, signed-in-only and staff-only pages
+│  ├─ admin/        the admin panel: layout, charts, shared pieces, pages/ (one file per screen)
 │  ├─ components/   header, search box, prices, stars, product tiles, form fields, feedback
 │  ├─ pages/        one file per page (+ product/Reviews.tsx); *.test.ts(x) next to them
 │  └─ lib/          formatting, validation, storage
-├─ e2e/             Playwright journeys, admin helper, mock API
+├─ e2e/             Playwright journeys (storefront, admin), API helper, mock API
 └─ vite.config.ts   dev server, /api proxy, Vitest settings
 ```

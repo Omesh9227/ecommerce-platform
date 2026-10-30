@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { RequireAuth } from './auth/RequireAuth';
+import { Loading } from './components/Feedback';
 import { Layout } from './components/Layout';
 import { AccountPage } from './pages/AccountPage';
 import { CartPage } from './pages/CartPage';
@@ -16,11 +18,21 @@ import { SearchPage } from './pages/SearchPage';
 import { TrackPage } from './pages/TrackPage';
 import { WishlistPage } from './pages/WishlistPage';
 
+const AdminApp = lazy(() => import('./admin/AdminApp'));
+
 const signedIn = (page: JSX.Element) => <RequireAuth>{page}</RequireAuth>;
 
 export function App() {
   return (
     <Routes>
+      <Route
+        path="admin/*"
+        element={
+          <Suspense fallback={<Loading label="Opening admin…" />}>
+            <AdminApp />
+          </Suspense>
+        }
+      />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="search" element={<SearchPage />} />
