@@ -28,6 +28,11 @@ export function Header() {
               Sign in
             </Link>
           )}
+          {user?.role === 'ADMIN' && (
+            <Link to="/admin" className="rounded bg-marigold px-2 py-0.5 font-semibold text-ink hover:bg-marigold-deep">
+              Admin
+            </Link>
+          )}
           <NavLink to="/orders" className="hidden hover:underline sm:block">
             Orders
           </NavLink>

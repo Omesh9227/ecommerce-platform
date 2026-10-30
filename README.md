@@ -14,7 +14,7 @@ ecommerce-platform/
 │  ├─ payment-service/  notification-service/  wishlist-service/  review-service/
 │  ├─ shipping-service/  search-service/  recommendation-service/  admin-service/
 │  └─ config-repo/          business settings served by config-server
-├─ frontend/                the storefront (React + TypeScript, Node.js 22)
+├─ frontend/                the storefront and the admin panel (React + TypeScript, Node.js 22)
 ├─ .env                     secrets for every service (git-ignored; copy .env.example)
 └─ .env.example
 ```
@@ -50,14 +50,16 @@ folder). The frontend opens fine in IntelliJ or VS Code (`frontend/` folder).
 | recommendation-service | 8092 | `ecommerce_recommendation_db` | Phase 13 — complete (bought together, also viewed, similar, trending, for you) |
 | admin-service   | 8093 | `ecommerce_admin_db`   | Phase 14 — complete (dashboard: sales, orders, payments, stock, deliveries, activity feed) |
 | frontend (storefront) | 3000 | — (React, calls the gateway) | Phase 15 — complete (search, product pages, cart, checkout, payment, orders, tracking, reviews, wishlist) |
+| frontend (admin panel) | 3000 `/admin` | — (same app, ADMIN accounts only) | Phase 16 — complete (dashboard, orders, shipping, products, categories, stock, reviews, customers) |
 
 All client traffic goes through the gateway on **8080** (see `backend/api-gateway/README.md`).
 Start order: PostgreSQL + Kafka + Redis + Mailpit → **discovery-server → config-server** → user-service → product-service → inventory-service → cart-service → order-service → payment-service → notification-service → wishlist-service → review-service → shipping-service → search-service → recommendation-service → admin-service → api-gateway → **frontend** (`cd frontend && npm run dev`, then open http://localhost:3000).
 Each service has its own README with APIs, run/test steps and a Postman collection.
 
-The customer website is in [`frontend/`](frontend) (React + TypeScript, see its README); it needs Node.js 22.
+The customer website and the staff's admin panel (http://localhost:3000/admin, sign in as `admin@ecommerce.com`) are in
+[`frontend/`](frontend) (React + TypeScript, see its README); it needs Node.js 22.
 
-Still to come before Docker: the admin panel (Phase 16), then Prometheus + Grafana (Phase 17).
+Still to come before Docker: Prometheus + Grafana (Phase 17).
 Docker (18), Kubernetes (19), Jenkins (20) and GCP (21) follow once everything runs locally.
 
 ## Service discovery and configuration (Phase 8)
